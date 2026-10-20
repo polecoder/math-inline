@@ -3,10 +3,23 @@ import { MathDecorator } from './decorator';
 import { MathHoverProvider } from './hover';
 import { SECTION, getConfig } from './config';
 
+/**
+ * @brief API que expone la extensión al activarse (usada por los tests).
+ */
 export interface MathInlineApi {
+	/** Decorador activo que gestiona el render en los editores. */
 	decorator: MathDecorator;
 }
 
+/**
+ * @brief Activa la extensión.
+ *
+ * Crea el decorador, registra el proveedor de hover para Markdown y el comando
+ * `mathInline.toggle`, que alterna `mathInline.enabled` en la configuración global.
+ *
+ * @param context Contexto de la extensión, donde se registran los recursos a liberar.
+ * @return API con el decorador creado.
+ */
 export function activate(context: vscode.ExtensionContext): MathInlineApi {
 	const decorator = new MathDecorator();
 
@@ -20,4 +33,7 @@ export function activate(context: vscode.ExtensionContext): MathInlineApi {
 	return { decorator };
 }
 
+/**
+ * @brief Desactiva la extensión; no hay nada que liberar porque `activate` registra todo en `context.subscriptions`.
+ */
 export function deactivate() {}

@@ -15,3 +15,5 @@ esbuild.js
 **/*.ts
 **/.vscode-test.*
 ISSUES.md
+.claude/**
+CLAUDE.md

@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import type { MathInlineApi } from '../extension';
 import { isError, render } from '../renderer';
 
+/** @brief Identificador de la extensión (`publisher.name`) usado para activarla en los tests. */
 const EXTENSION_ID = 'polecoder.math-inline';
 
 suite('renderer', () => {

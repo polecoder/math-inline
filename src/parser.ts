@@ -1,3 +1,6 @@
+/**
+ * @brief Fórmula inline hallada en un documento Markdown.
+ */
 export interface MathSpan {
 	/** Offset of the opening `$`. */
 	start: number;
@@ -7,14 +10,21 @@ export interface MathSpan {
 	tex: string;
 }
 
+/** @brief Detecta la línea de apertura o cierre de un bloque de código cercado (``` o ~~~); el grupo 1 es el cerco. */
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+/** @brief Detecta una línea con sangría de código (4 espacios o un tab). */
 const INDENTED_CODE = /^(?: {4}|\t)/;
 
 /**
- * Finds inline math (`$...$`) in a Markdown document, following Pandoc's rules:
- * the opening `$` must not be followed by whitespace, the closing `$` must not be
- * preceded by whitespace nor followed by a digit. Code (fenced, indented and code
- * spans), escaped dollars and `$$...$$` display math are skipped.
+ * @brief Busca las fórmulas inline (`$...$`) de un documento Markdown.
+ *
+ * Sigue las reglas de Pandoc: el `$` de apertura no puede ir seguido de un espacio,
+ * y el de cierre no puede ir precedido de un espacio ni seguido de un dígito.
+ * Se ignoran el código (cercado, con sangría y en línea), los `\$` escapados y
+ * las fórmulas de bloque `$$...$$`. Una fórmula inline no cruza líneas.
+ *
+ * @param text Contenido completo del documento.
+ * @return Fórmulas halladas, en orden de aparición, con offsets sobre `text`.
  */
 export function findInlineMath(text: string): MathSpan[] {
 	const spans: MathSpan[] = [];
@@ -58,7 +68,15 @@ export function findInlineMath(text: string): MathSpan[] {
 	return spans;
 }
 
-/** Scans one line, appending spans; returns whether a `$$` block is still open. */
+/**
+ * @brief Escanea una línea y agrega a `spans` las fórmulas inline que encuentra.
+ *
+ * @param line Línea sin el salto de línea final.
+ * @param lineStart Offset del inicio de la línea en el documento.
+ * @param inDisplay Si la línea empieza dentro de un bloque `$$`.
+ * @param spans Lista a la que se agregan las fórmulas halladas.
+ * @return `true` si al terminar la línea sigue abierto un bloque `$$`.
+ */
 function scanLine(line: string, lineStart: number, inDisplay: boolean, spans: MathSpan[]): boolean {
 	let i = 0;
 	while (i < line.length) {
@@ -106,6 +124,14 @@ function scanLine(line: string, lineStart: number, inDisplay: boolean, spans: Ma
 	return inDisplay;
 }
 
+/**
+ * @brief Busca el delimitador que cierra un code span de Markdown.
+ *
+ * @param line Línea donde buscar.
+ * @param from Índice desde el cual buscar (justo después de la apertura).
+ * @param delim Delimitador de apertura (una cadena de backticks).
+ * @return Índice del delimitador de cierre, o -1 si no se cierra en la línea.
+ */
 function findCodeSpanClose(line: string, from: number, delim: string): number {
 	let idx = line.indexOf(delim, from);
 	while (idx !== -1) {
@@ -121,6 +147,15 @@ function findCodeSpanClose(line: string, from: number, delim: string): number {
 	return -1;
 }
 
+/**
+ * @brief Busca el `$` que cierra una fórmula inline.
+ *
+ * Aplica las reglas de Pandoc y se rinde ante un backtick o un `$$`.
+ *
+ * @param line Línea donde buscar.
+ * @param from Índice del primer carácter después del `$` de apertura.
+ * @return Índice del `$` de cierre, o -1 si no hay uno válido.
+ */
 function findMathClose(line: string, from: number): number {
 	if (from >= line.length || /\s/.test(line[from])) {
 		return -1;

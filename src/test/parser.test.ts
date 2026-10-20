@@ -1,6 +1,12 @@
 import * as assert from 'assert';
 import { findInlineMath } from '../parser';
 
+/**
+ * @brief Extrae solo el TeX de cada fórmula inline encontrada.
+ *
+ * @param source Texto Markdown a analizar.
+ * @return Fuentes TeX de las fórmulas, en orden de aparición.
+ */
 function texts(source: string): string[] {
 	return findInlineMath(source).map(s => s.tex);
 }

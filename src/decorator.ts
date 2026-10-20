@@ -3,24 +3,45 @@ import { findInlineMath, MathSpan } from './parser';
 import { isError, render, RenderOptions } from './renderer';
 import { getConfig, getFontSize, MathInlineConfig, resolveColor } from './config';
 
-// Not an official API: VS Code copies `textDecoration` verbatim into a CSS rule,
-// so a trailing declaration hides the source text behind the rendered image.
+/**
+ * @brief Valor de `textDecoration` que oculta el código fuente detrás de la imagen renderizada.
+ *
+ * No es API oficial: VS Code copia `textDecoration` tal cual en una regla CSS,
+ * por lo que una declaración extra al final permite ocultar el texto.
+ */
 const HIDE_SOURCE_CSS = 'none; display: none;';
+/** @brief Espera en milisegundos antes de actualizar tras editar un documento. */
 const DEBOUNCE_MS = 150;
-// MathJax lays out with ex ≈ 0.5em; the factor keeps formulas close to the text size.
+/** @brief Relación `ex`/`em` con la que MathJax calcula el layout; mantiene las fórmulas cerca del tamaño del texto. */
 const EX_PER_EM = 0.5;
 
+/**
+ * @brief Decoraciones aplicadas por última vez a un editor.
+ */
 export interface EditorMathState {
+	/** Rangos de las fórmulas renderizadas correctamente. */
 	rendered: vscode.Range[];
+	/** Rangos de las fórmulas con error de TeX. */
 	errors: vscode.Range[];
+	/** Rangos de las fórmulas que se muestran como código porque el cursor las toca. */
 	revealed: vscode.Range[];
 }
 
+/** @brief Fórmulas parseadas de un documento, asociadas a la versión que se analizó. */
 interface ParsedDocument {
+	/** Versión del documento al momento de parsear. */
 	version: number;
+	/** Fórmulas halladas. */
 	spans: MathSpan[];
 }
 
+/**
+ * @brief Renderiza las fórmulas inline de los editores Markdown mediante decoraciones.
+ *
+ * Oculta el código fuente de cada fórmula y muestra en su lugar la imagen; las fórmulas
+ * con error se subrayan y las que tocan una selección se dejan como texto para poder editarlas.
+ * Se actualiza ante cambios de editores, selección, documento, tema y configuración.
+ */
 export class MathDecorator implements vscode.Disposable {
 	private readonly hiddenType = vscode.window.createTextEditorDecorationType({
 		textDecoration: HIDE_SOURCE_CSS,
@@ -34,6 +55,9 @@ export class MathDecorator implements vscode.Disposable {
 	private readonly disposables: vscode.Disposable[] = [];
 	private config: MathInlineConfig = getConfig();
 
+	/**
+	 * @brief Crea los tipos de decoración, suscribe los eventos relevantes y hace una primera actualización.
+	 */
 	constructor() {
 		this.disposables.push(
 			this.hiddenType,
@@ -53,7 +77,14 @@ export class MathDecorator implements vscode.Disposable {
 		this.updateAll();
 	}
 
-	/** Formulas in `document`, re-parsed only when its version changes. */
+	/**
+	 * @brief Devuelve las fórmulas de un documento.
+	 *
+	 * Solo vuelve a parsear cuando cambia la versión del documento.
+	 *
+	 * @param document Documento a analizar.
+	 * @return Fórmulas inline del documento.
+	 */
 	getSpans(document: vscode.TextDocument): MathSpan[] {
 		const key = document.uri.toString();
 		const cached = this.parsed.get(key);
@@ -65,6 +96,12 @@ export class MathDecorator implements vscode.Disposable {
 		return spans;
 	}
 
+	/**
+	 * @brief Calcula las opciones de render según la configuración y el editor.
+	 *
+	 * @param scale Factor adicional de escala sobre `mathInline.scale` (1 por defecto).
+	 * @return Color resuelto y tamaño de `ex` en píxeles.
+	 */
 	renderOptions(scale = 1): RenderOptions {
 		return {
 			color: resolveColor(this.config),
@@ -72,17 +109,35 @@ export class MathDecorator implements vscode.Disposable {
 		};
 	}
 
-	/** Last decorations applied to `editor`, for tests and diagnostics. */
+	/**
+	 * @brief Devuelve las últimas decoraciones aplicadas a un editor, para tests y diagnóstico.
+	 *
+	 * @param editor Editor consultado.
+	 * @return Estado de las decoraciones, o `undefined` si el editor nunca se actualizó.
+	 */
 	getState(editor: vscode.TextEditor): EditorMathState | undefined {
 		return this.states.get(editor);
 	}
 
+	/**
+	 * @brief Actualiza las decoraciones de todos los editores visibles.
+	 */
 	updateAll(): void {
 		for (const editor of vscode.window.visibleTextEditors) {
 			this.update(editor);
 		}
 	}
 
+	/**
+	 * @brief Recalcula y aplica las decoraciones de un editor Markdown.
+	 *
+	 * Las fórmulas tocadas por alguna selección quedan reveladas (sin decorar), las
+	 * inválidas se subrayan con el mensaje de error y el resto se reemplaza por su
+	 * imagen. No hace nada si el documento no es Markdown; si la extensión está
+	 * deshabilitada, limpia las decoraciones.
+	 *
+	 * @param editor Editor a actualizar.
+	 */
 	update(editor: vscode.TextEditor): void {
 		if (editor.document.languageId !== 'markdown') {
 			return;
@@ -123,6 +178,11 @@ export class MathDecorator implements vscode.Disposable {
 		this.states.set(editor, { rendered: hidden.map(d => d.range), errors: errors.map(d => d.range), revealed });
 	}
 
+	/**
+	 * @brief Programa, con debounce, la actualización de los editores que muestran un documento Markdown.
+	 *
+	 * @param document Documento que cambió.
+	 */
 	private scheduleUpdate(document: vscode.TextDocument): void {
 		if (document.languageId !== 'markdown') {
 			return;
@@ -139,6 +199,9 @@ export class MathDecorator implements vscode.Disposable {
 		}, DEBOUNCE_MS));
 	}
 
+	/**
+	 * @brief Cancela los temporizadores pendientes y libera las decoraciones y suscripciones.
+	 */
 	dispose(): void {
 		for (const timer of this.timers.values()) {
 			clearTimeout(timer);
