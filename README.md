@@ -21,7 +21,7 @@ Dollar signs follow Pandoc's rules, so `$5 and $10` is not math: the opening `$`
 | `mathInline.scale` | `1` | Size of formulas relative to the editor font size. |
 | `mathInline.color` | `""` | CSS color for formulas. Empty picks one based on the theme (light/dark/high contrast). |
 
-Command: **Math Inline: Toggle Inline Math Rendering**.
+Command: **Math Inline: Toggle Inline Math Rendering**, bound to <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> (<kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> on macOS) in Markdown editors. Press it once to see the TeX source of every formula, and again to see them rendered. To use another shortcut, open **Preferences: Open Keyboard Shortcuts** and search for `mathInline.toggle`.
 
 ## Known limitations
 

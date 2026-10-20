@@ -38,6 +38,14 @@
         "category": "Math Inline"
       }
     ],
+    "keybindings": [
+      {
+        "command": "mathInline.toggle",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m",
+        "when": "editorTextFocus && editorLangId == markdown"
+      }
+    ],
     "configuration": {
       "title": "Math Inline",
       "properties": {

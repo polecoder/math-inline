@@ -54,4 +54,15 @@ suite('MathDecorator', () => {
 		assert.strictEqual(state.revealed.length, 1);
 		assert.ok(state.revealed[0].isEqual(first));
 	});
+
+	test('toggle command switches between source and rendered math', async () => {
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		await vscode.commands.executeCommand('mathInline.toggle');
+		api.decorator.update(editor);
+		assert.strictEqual(api.decorator.getState(editor)!.rendered.length, 0);
+
+		await vscode.commands.executeCommand('mathInline.toggle');
+		api.decorator.update(editor);
+		assert.strictEqual(api.decorator.getState(editor)!.rendered.length, 2);
+	});
 });
