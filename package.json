@@ -1,44 +1,94 @@
 {
   "name": "math-inline",
   "displayName": "Math Inline",
-  "description": "",
-  "version": "0.0.1",
+  "description": "Renders inline $...$ math in Markdown files directly inside the editor.",
+  "version": "0.1.0",
+  "publisher": "polecoder",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/polecoder/math-inline.git"
+  },
+  "bugs": {
+    "url": "https://github.com/polecoder/math-inline/issues"
+  },
+  "keywords": [
+    "markdown",
+    "math",
+    "latex",
+    "mathjax",
+    "tex"
+  ],
   "engines": {
-    "vscode": "^1.140.0"
+    "vscode": "^1.90.0"
   },
   "categories": [
+    "Visualization",
     "Other"
   ],
-  "activationEvents": [],
-  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "math-inline.helloWorld",
-        "title": "Hello World"
+        "command": "mathInline.toggle",
+        "title": "Toggle Inline Math Rendering",
+        "category": "Math Inline"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Math Inline",
+      "properties": {
+        "mathInline.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Render inline $...$ math in Markdown editors."
+        },
+        "mathInline.scale": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0.25,
+          "maximum": 4,
+          "description": "Size of rendered formulas relative to the editor font size."
+        },
+        "mathInline.color": {
+          "type": "string",
+          "default": "",
+          "description": "CSS color for rendered formulas (e.g. #ffcc00). Leave empty to pick one based on the current theme."
+        }
+      }
+    }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
+    "vscode:prepublish": "npm run check-types && node esbuild.js --production",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "check-types": "tsc --noEmit",
+    "compile-tests": "tsc -p ./",
+    "pretest": "npm run compile-tests && npm run compile",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "package": "vsce package"
   },
   "devDependencies": {
-    "@types/vscode": "^1.140.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "24.x",
-    "typescript-eslint": "^8.61.1",
+    "@types/vscode": "~1.90.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.5.0",
     "typescript": "^6.0.3",
-    "@vscode/test-cli": "^0.0.15",
-    "@vscode/test-electron": "^3.0.0"
+    "typescript-eslint": "^8.61.1"
   },
   "overrides": {
     "diff": "^8.0.4",
     "serialize-javascript": "^7.0.6"
+  },
+  "dependencies": {
+    "mathjax-full": "^3.2.2"
   }
 }

@@ -6,7 +6,6 @@
 		{
 			"type": "npm",
 			"script": "watch",
-			"problemMatcher": "$tsc-watch",
 			"isBackground": true,
 			"presentation": {
 				"reveal": "never"
@@ -14,6 +13,19 @@
 			"group": {
 				"kind": "build",
 				"isDefault": true
+			},
+			"problemMatcher": {
+				"owner": "esbuild",
+				"fileLocation": "relative",
+				"pattern": [
+					{ "regexp": "^✘ \[ERROR\] (.*)$", "message": 1 },
+					{ "regexp": "^\s+(.*):(\d+):(\d+):$", "file": 1, "line": 2, "column": 3 }
+				],
+				"background": {
+					"activeBegins": true,
+					"beginsPattern": "^\[watch\] build started",
+					"endsPattern": "^\[watch\] build finished"
+				}
 			}
 		}
 	]
