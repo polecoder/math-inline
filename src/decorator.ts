@@ -79,6 +79,17 @@ export class MathDecorator implements vscode.Disposable {
 				+ ' text-align: center; white-space: nowrap; border-radius: 3px; pointer-events: none;',
 		},
 	});
+	/**
+	 * @brief Decoración que oculta el resto del código de las fórmulas mostradas como chip (todo menos el `$` de apertura).
+	 *
+	 * Usa `font-size: 0` en lugar de `display: none` (`hiddenType`): con `display: none` VS Code no
+	 * puede medir la posición del carácter siguiente al `$`, y el mouse sobre la mitad derecha del
+	 * chip no resolvía a una posición ni mostraba el hover. Con tamaño cero esa posición sigue siendo
+	 * medible en el borde derecho del chip.
+	 */
+	private readonly chipSourceType = vscode.window.createTextEditorDecorationType({
+		textDecoration: 'none; font-size: 0;',
+	});
 	private readonly errorType = vscode.window.createTextEditorDecorationType({
 		textDecoration: 'underline wavy var(--vscode-editorError-foreground)',
 	});
@@ -99,6 +110,7 @@ export class MathDecorator implements vscode.Disposable {
 		this.disposables.push(
 			this.hiddenType,
 			this.collapsedType,
+			this.chipSourceType,
 			this.errorType,
 			vscode.window.onDidChangeVisibleTextEditors(() => this.updateAll()),
 			vscode.window.onDidChangeTextEditorSelection(e => this.update(e.textEditor)),
@@ -200,7 +212,7 @@ export class MathDecorator implements vscode.Disposable {
 	 * inválidas se subrayan con el mensaje de error, las que requerirían un achique menor
 	 * a `MIN_INLINE_SCALE` quedan como chip (`collapsed`) y el resto se reemplaza por su
 	 * imagen. En los chips, `collapsedType` se aplica solo al `$` de apertura y el resto del
-	 * código se oculta con `hiddenType`; no llevan `hoverMessage`, porque el mouse sobre el chip
+	 * código se oculta con `chipSourceType`; no llevan `hoverMessage`, porque el mouse sobre el chip
 	 * cae dentro de la fórmula y la vista previa la da `MathHoverProvider`. Renderiza con
 	 * `textStyle` y con `maxHeight` igual al alto de línea del editor, para que las fórmulas
 	 * entren en una línea (el hover no se ve afectado).
@@ -253,8 +265,9 @@ export class MathDecorator implements vscode.Disposable {
 			}
 		}
 
-		editor.setDecorations(this.hiddenType, [...hidden, ...chipSources]);
+		editor.setDecorations(this.hiddenType, hidden);
 		editor.setDecorations(this.collapsedType, chips);
+		editor.setDecorations(this.chipSourceType, chipSources);
 		editor.setDecorations(this.errorType, errors);
 		this.states.set(editor, {
 			rendered: hidden.map(d => d.range), collapsed, errors: errors.map(d => d.range), revealed,
