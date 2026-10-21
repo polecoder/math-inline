@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { MathDecorator } from './decorator';
 import { isError, render, RenderOptions } from './renderer';
 
-/** @brief Factor de ampliación de la fórmula mostrada en el hover (se usa también para la vista previa del chip). */
+/** @brief Factor de ampliación de la fórmula mostrada en el hover. */
 export const HOVER_SCALE = 1.5;
 /**
  * @brief Espacio en píxeles que VS Code reserva a la derecha de cada hover para su botón de copiar.
@@ -14,6 +14,8 @@ const COPY_BUTTON_GUTTER = 20;
 /**
  * @brief Proveedor de hover que muestra la fórmula ampliada al pasar el mouse sobre su código fuente.
  *
+ * También cubre las fórmulas grandes mostradas como chip, ya que el `$` de apertura transparente
+ * queda bajo el chip y el mouse cae dentro de la fórmula.
  * Si la fórmula tiene errores de TeX no devuelve nada: el mensaje ya lo aporta la decoración de error.
  */
 export class MathHoverProvider implements vscode.HoverProvider {
@@ -50,7 +52,7 @@ export class MathHoverProvider implements vscode.HoverProvider {
  * Envuelve la imagen en un SVG con un margen transparente a la izquierda de
  * `COPY_BUTTON_GUTTER` píxeles, igual al espacio que VS Code reserva a la derecha
  * para su botón de copiar, de modo que la fórmula quede centrada en el hover.
- * Lo usan `MathHoverProvider.provideHover` y las fórmulas colapsadas en `MathDecorator.update`.
+ * Lo usa `MathHoverProvider.provideHover`.
  *
  * @param tex Código TeX de la fórmula.
  * @param options Opciones de render (color y escala); `display` se fuerza a `true`.

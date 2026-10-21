@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import { findInlineMath, MathSpan } from './parser';
 import { isError, render, RenderOptions } from './renderer';
 import { getConfig, getFontSize, getLineHeight, MathInlineConfig, resolveColor } from './config';
-import { HOVER_SCALE, previewMarkdown } from './hover';
 
 /**
  * @brief Valor de `textDecoration` que oculta el código fuente detrás de la imagen renderizada.
@@ -19,6 +18,8 @@ const EX_PER_EM = 0.5;
 const MIN_INLINE_SCALE = 0.8;
 /** @brief Texto del chip que reemplaza a las fórmulas demasiado grandes. */
 const CHIP_TEXT = '∑ ver fórmula';
+/** @brief Ancho del chip, en caracteres (`ch`) de la fuente del editor. */
+const CHIP_WIDTH_CH = 15;
 /** @brief Espera en milisegundos antes de abrir el hover de una fórmula grande bajo el cursor. */
 const HOVER_DELAY_MS = 300;
 
@@ -50,22 +51,32 @@ interface ParsedDocument {
  * Oculta el código fuente de cada fórmula y muestra en su lugar la imagen; las fórmulas
  * con error se subrayan y las que tocan una selección se dejan como texto para poder editarlas.
  * Las fórmulas que habría que achicar por debajo de `MIN_INLINE_SCALE` se muestran como un
- * chip `CHIP_TEXT` con un `hoverMessage` que contiene la vista previa ampliada, y al poner el
- * cursor dentro de una de ellas se abre su hover automáticamente.
+ * chip `CHIP_TEXT`. El chip no lleva `hoverMessage`: la vista previa ampliada la aporta
+ * `MathHoverProvider`, y al poner el cursor dentro de una de ellas se abre su hover automáticamente.
  * Se actualiza ante cambios de editores, selección, documento, tema y configuración.
  */
 export class MathDecorator implements vscode.Disposable {
 	private readonly hiddenType = vscode.window.createTextEditorDecorationType({
 		textDecoration: HIDE_SOURCE_CSS,
 	});
+	/**
+	 * @brief Decoración del chip de las fórmulas grandes, aplicada solo al `$` de apertura.
+	 *
+	 * Ese `$` queda como texto real transparente, ensanchado con `letter-spacing` y desplazado con
+	 * `margin-left` negativo para quedar debajo del chip (`before` de ancho `CHIP_WIDTH_CH`, con
+	 * `pointer-events: none`). Así el mouse cae dentro de la fórmula: se dispara `MathHoverProvider`
+	 * y el cursor es el de texto.
+	 */
 	private readonly collapsedType = vscode.window.createTextEditorDecorationType({
-		textDecoration: HIDE_SOURCE_CSS,
+		textDecoration: `none; color: transparent !important; letter-spacing: ${CHIP_WIDTH_CH - 1}ch;`
+			+ ` margin-left: -${CHIP_WIDTH_CH}ch;`,
 		before: {
 			contentText: CHIP_TEXT,
 			color: new vscode.ThemeColor('textLink.foreground'),
 			border: '1px solid',
 			borderColor: new vscode.ThemeColor('textLink.foreground'),
-			textDecoration: 'none; border-radius: 3px; padding: 0 4px; cursor: pointer;',
+			textDecoration: `none; display: inline-block; box-sizing: border-box; width: ${CHIP_WIDTH_CH}ch;`
+				+ ' text-align: center; white-space: nowrap; border-radius: 3px; pointer-events: none;',
 		},
 	});
 	private readonly errorType = vscode.window.createTextEditorDecorationType({
@@ -188,10 +199,11 @@ export class MathDecorator implements vscode.Disposable {
 	 * Las fórmulas tocadas por alguna selección quedan reveladas (sin decorar), las
 	 * inválidas se subrayan con el mensaje de error, las que requerirían un achique menor
 	 * a `MIN_INLINE_SCALE` quedan como chip (`collapsed`) y el resto se reemplaza por su
-	 * imagen. Los chips llevan como `hoverMessage` la vista previa de `previewMarkdown` (con
-	 * `HOVER_SCALE`), porque el mouse sobre el chip no cae dentro del código oculto y el
-	 * proveedor de hover no se dispara. Renderiza con `textStyle` y con `maxHeight` igual al alto de línea del
-	 * editor, para que las fórmulas entren en una línea (el hover no se ve afectado).
+	 * imagen. En los chips, `collapsedType` se aplica solo al `$` de apertura y el resto del
+	 * código se oculta con `hiddenType`; no llevan `hoverMessage`, porque el mouse sobre el chip
+	 * cae dentro de la fórmula y la vista previa la da `MathHoverProvider`. Renderiza con
+	 * `textStyle` y con `maxHeight` igual al alto de línea del editor, para que las fórmulas
+	 * entren en una línea (el hover no se ve afectado).
 	 * Al final llama a `scheduleHover` para abrir el hover de una fórmula grande bajo el cursor.
 	 * No hace nada si el documento no es Markdown; si la extensión está
 	 * deshabilitada, limpia las decoraciones.
@@ -203,7 +215,9 @@ export class MathDecorator implements vscode.Disposable {
 			return;
 		}
 		const hidden: vscode.DecorationOptions[] = [];
-		const collapsed: vscode.DecorationOptions[] = [];
+		const collapsed: vscode.Range[] = [];
+		const chips: vscode.DecorationOptions[] = [];
+		const chipSources: vscode.DecorationOptions[] = [];
 		const errors: vscode.DecorationOptions[] = [];
 		const revealed: vscode.Range[] = [];
 
@@ -219,9 +233,10 @@ export class MathDecorator implements vscode.Disposable {
 				if (isError(result)) {
 					errors.push({ range, hoverMessage: `Math Inline: ${result.error}` });
 				} else if (result.fit < MIN_INLINE_SCALE) {
-					// The mouse over the chip doesn't map to a position inside the hidden source,
-					// so hover providers never fire there: attach the preview to the decoration itself.
-					collapsed.push({ range, hoverMessage: previewMarkdown(span.tex, this.renderOptions(HOVER_SCALE)) });
+					// The preview comes from MathHoverProvider, since the opening `$` stays as hoverable text under the chip.
+					collapsed.push(range);
+					chips.push({ range: new vscode.Range(range.start, range.start.translate(0, 1)) });
+					chipSources.push({ range: new vscode.Range(range.start.translate(0, 1), range.end) });
 				} else {
 					hidden.push({
 						range,
@@ -238,11 +253,11 @@ export class MathDecorator implements vscode.Disposable {
 			}
 		}
 
-		editor.setDecorations(this.hiddenType, hidden);
-		editor.setDecorations(this.collapsedType, collapsed);
+		editor.setDecorations(this.hiddenType, [...hidden, ...chipSources]);
+		editor.setDecorations(this.collapsedType, chips);
 		editor.setDecorations(this.errorType, errors);
 		this.states.set(editor, {
-			rendered: hidden.map(d => d.range), collapsed: collapsed.map(d => d.range), errors: errors.map(d => d.range), revealed,
+			rendered: hidden.map(d => d.range), collapsed, errors: errors.map(d => d.range), revealed,
 		});
 		this.scheduleHover(editor);
 	}
