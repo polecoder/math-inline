@@ -5,6 +5,8 @@ import { isError, render } from '../renderer';
 
 /** @brief Identificador de la extensión (`publisher.name`) usado para activarla en los tests. */
 const EXTENSION_ID = 'polecoder.math-inline';
+/** @brief Fórmula demasiado alta para mostrarse inline. */
+const BIG_TEX = String.raw`\left[\overline{X}_n\pm\dfrac{\sqrt{\overline{X}_n(1-\overline{X}_n)}\,z_{\alpha/2}}{\sqrt n}\right]`;
 
 suite('renderer', () => {
 	test('renders valid TeX to a sized SVG data URI', () => {
@@ -22,6 +24,37 @@ suite('renderer', () => {
 		assert.ok(isError(result));
 		assert.match(result.error, /brace/i);
 	});
+
+	test('shrinks tall formulas to maxHeight keeping the aspect ratio', () => {
+		const tex = String.raw`\left[\dfrac{\sqrt{a}}{b}\right]`;
+		const full = render(tex, { color: '#000', exPx: 7 });
+		const fitted = render(tex, { color: '#000', exPx: 7, maxHeight: 19 });
+		assert.ok(!isError(full) && !isError(fitted));
+		assert.ok(full.height > 19);
+		assert.strictEqual(fitted.height, 19);
+		assert.ok(Math.abs(fitted.width / fitted.height - full.width / full.height) < 0.05);
+	});
+
+	test('leaves formulas within maxHeight untouched', () => {
+		const full = render('x', { color: '#000', exPx: 7 });
+		const fitted = render('x', { color: '#000', exPx: 7, maxHeight: 19 });
+		assert.deepStrictEqual(fitted, full);
+		assert.ok(!isError(fitted) && fitted.fit === 1);
+	});
+
+	test('reports the shrink factor applied by maxHeight', () => {
+		const fitted = render(String.raw`\dfrac{\sqrt{a}}{b}`, { color: '#000', exPx: 7, maxHeight: 10 });
+		assert.ok(!isError(fitted));
+		assert.ok(fitted.fit > 0 && fitted.fit < 1);
+	});
+
+	test('textStyle renders display fractions smaller', () => {
+		const tex = String.raw`\dfrac{a}{b}`;
+		const display = render(tex, { color: '#000', exPx: 7 });
+		const text = render(tex, { color: '#000', exPx: 7, textStyle: true });
+		assert.ok(!isError(display) && !isError(text));
+		assert.ok(text.height < display.height);
+	});
 });
 
 suite('MathDecorator', () => {
@@ -32,7 +65,8 @@ suite('MathDecorator', () => {
 		api = await vscode.extensions.getExtension<MathInlineApi>(EXTENSION_ID)!.activate();
 		const document = await vscode.workspace.openTextDocument({
 			language: 'markdown',
-			content: 'Intro line\nEuler: $e^{i\\pi}+1=0$ and $\\frac{a}{b}$.\nBroken: $\\frac{a$\n',
+			content: 'Intro line\nEuler: $e^{i\\pi}+1=0$ and $\\frac{a}{b}$.\nBroken: $\\frac{a$\n'
+				+ `Big: $${BIG_TEX}$\n`,
 		});
 		editor = await vscode.window.showTextDocument(document);
 	});
@@ -42,8 +76,17 @@ suite('MathDecorator', () => {
 		api.decorator.update(editor);
 		const state = api.decorator.getState(editor)!;
 		assert.strictEqual(state.rendered.length, 2);
+		assert.strictEqual(state.collapsed.length, 1);
 		assert.strictEqual(state.errors.length, 1);
 		assert.strictEqual(state.revealed.length, 0);
+	});
+
+	test('shows the big formula in a display-mode hover', async () => {
+		const big = api.decorator.getState(editor)!.collapsed[0];
+		const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+			'vscode.executeHoverProvider', editor.document.uri, big.start.translate(0, 3));
+		const contents = hovers.flatMap(h => h.contents).map(c => (c as vscode.MarkdownString).value ?? '');
+		assert.ok(contents.some(c => c.includes('data:image/svg+xml')));
 	});
 
 	test('reveals the formula under the cursor', () => {

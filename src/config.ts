@@ -45,6 +45,24 @@ export function getFontSize(): number {
 }
 
 /**
+ * @brief Devuelve el alto de línea del editor en píxeles.
+ *
+ * Replica el cálculo de VS Code a partir de `editor.lineHeight`: 0 usa la
+ * proporción por defecto de la plataforma, un valor menor que 8 es un
+ * multiplicador del tamaño de fuente y cualquier otro es un valor en píxeles.
+ *
+ * @return Alto de línea en píxeles.
+ */
+export function getLineHeight(): number {
+	const fontSize = getFontSize();
+	const lineHeight = vscode.workspace.getConfiguration('editor', { languageId: 'markdown' }).get<number>('lineHeight', 0);
+	if (lineHeight <= 0) {
+		return Math.round(fontSize * (process.platform === 'darwin' ? 1.5 : 1.35));
+	}
+	return lineHeight < 8 ? Math.round(lineHeight * fontSize) : lineHeight;
+}
+
+/**
  * @brief Determina el color con el que se pintan las fórmulas.
  *
  * Usa el color configurado por el usuario; si está vacío, elige uno por defecto

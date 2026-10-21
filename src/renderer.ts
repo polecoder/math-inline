@@ -13,6 +13,12 @@ export interface RenderOptions {
 	color: string;
 	/** Tamaño de una unidad `ex` en píxeles. */
 	exPx: number;
+	/** Si es `true`, renderiza `\dfrac` y `\dbinom` en estilo texto. */
+	textStyle?: boolean;
+	/** Alto máximo en píxeles; las fórmulas más altas se achican proporcionalmente. */
+	maxHeight?: number;
+	/** Si es `true`, renderiza en modo display (fracciones grandes, límites debajo). */
+	display?: boolean;
 }
 
 /**
@@ -27,6 +33,8 @@ export interface RenderedMath {
 	height: number;
 	/** Desplazamiento de la línea base en px (negativo = por debajo de la línea base del texto). */
 	verticalAlign: number;
+	/** Factor de achique aplicado para respetar `maxHeight` (1 si no se achicó). */
+	fit: number;
 }
 
 /**
@@ -89,15 +97,17 @@ function getDocument(): MathDocument {
 /**
  * @brief Renderiza TeX inline a una imagen SVG, con caché.
  *
- * La caché se indexa por color, `exPx` y TeX, y descarta la entrada más antigua
- * al llegar a `CACHE_LIMIT`. Los errores también se cachean.
+ * La caché se indexa por color, `exPx`, `textStyle`, `maxHeight`, `display` y TeX, y
+ * descarta la entrada más antigua al llegar a `CACHE_LIMIT`. Los errores también se cachean.
  *
  * @param tex Código TeX de la fórmula, sin delimitadores.
- * @param options Color y escala del render.
+ * @param options Color, escala, estilo de texto, alto máximo y modo display del render.
  * @return Imagen renderizada, o el error de MathJax si el TeX no es válido.
  */
 export function render(tex: string, options: RenderOptions): RenderResult {
-	const key = `${options.color}\u0000${options.exPx}\u0000${tex}`;
+	const key = [
+		options.color, options.exPx, options.textStyle ?? false, options.maxHeight ?? '', options.display ?? false, tex,
+	].join('\u0000');
 	const cached = cache.get(key);
 	if (cached) {
 		return cached;
@@ -115,16 +125,23 @@ export function render(tex: string, options: RenderOptions): RenderResult {
  * @brief Convierte TeX a SVG con MathJax, sin usar la caché.
  *
  * Reescribe el SVG para que tenga dimensiones en píxeles, sin `style` en la raíz
- * y con `currentColor` reemplazado por el color pedido.
+ * y con `currentColor` reemplazado por el color pedido. Si `textStyle` está activo,
+ * reemplaza `\dfrac` y `\dbinom` por `\frac` y `\binom` antes de convertir. Si
+ * `display` está activo, MathJax convierte en modo display. Si el alto supera
+ * `maxHeight`, escala proporcionalmente ancho, alto y `verticalAlign`, y deja en
+ * `fit` el factor aplicado.
  *
  * @param tex Código TeX de la fórmula.
- * @param options Color y tamaño de `ex` en píxeles.
- * @return Imagen como URI `data:` con sus medidas, o el error de MathJax.
+ * @param options Color, tamaño de `ex` en píxeles, `textStyle`, `maxHeight` y `display` (falso por defecto).
+ * @return Imagen como URI `data:` con sus medidas y el factor `fit`, o el error de MathJax.
  */
-function renderUncached(tex: string, { color, exPx }: RenderOptions): RenderResult {
+function renderUncached(tex: string, { color, exPx, textStyle, maxHeight, display = false }: RenderOptions): RenderResult {
+	if (textStyle) {
+		tex = tex.replace(/\\d(frac|binom)(?![a-zA-Z])/g, '\\$1');
+	}
 	let svg: string;
 	try {
-		const node = getDocument().convert(tex, { display: false });
+		const node = getDocument().convert(tex, { display });
 		svg = adaptor!.innerHTML(node);
 	} catch (err) {
 		// MathJax's TexError is not an Error subclass, but carries a message.
@@ -132,9 +149,17 @@ function renderUncached(tex: string, { color, exPx }: RenderOptions): RenderResu
 		return { error: typeof message === 'string' ? message : String(err) };
 	}
 
-	const width = exToPx(attr(svg, 'width'), exPx);
-	const height = exToPx(attr(svg, 'height'), exPx);
-	const verticalAlign = exToPx(/vertical-align:\s*(-?[\d.]+)ex/.exec(svg)?.[1], exPx);
+	let width = exToPx(attr(svg, 'width'), exPx);
+	let height = exToPx(attr(svg, 'height'), exPx);
+	let verticalAlign = exToPx(/vertical-align:\s*(-?[\d.]+)ex/.exec(svg)?.[1], exPx);
+	let fit = 1;
+	if (maxHeight !== undefined && height > maxHeight) {
+		// The viewBox is untouched, so shrinking the box scales the drawing with it.
+		fit = maxHeight / height;
+		width = round2(width * fit);
+		height = maxHeight;
+		verticalAlign = round2(verticalAlign * fit);
+	}
 
 	svg = svg
 		.replace(/^<svg[^>]*>/, root => root
@@ -148,6 +173,7 @@ function renderUncached(tex: string, { color, exPx }: RenderOptions): RenderResu
 		width,
 		height,
 		verticalAlign,
+		fit,
 	};
 }
 
@@ -170,7 +196,17 @@ function attr(svg: string, name: string): string | undefined {
  * @return Medida en píxeles (0 si `value` es `undefined`).
  */
 function exToPx(value: string | undefined, exPx: number): number {
-	return value === undefined ? 0 : Math.round(parseFloat(value) * exPx * 100) / 100;
+	return value === undefined ? 0 : round2(parseFloat(value) * exPx);
+}
+
+/**
+ * @brief Redondea un número a dos decimales.
+ *
+ * @param value Número a redondear.
+ * @return `value` redondeado a dos decimales.
+ */
+function round2(value: number): number {
+	return Math.round(value * 100) / 100;
 }
 
 /**
