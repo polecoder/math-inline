@@ -89,6 +89,15 @@ suite('MathDecorator', () => {
 		assert.ok(contents.some(c => c.includes('data:image/svg+xml')));
 	});
 
+	test('hovering the chip lands on its visible opening `$`', async () => {
+		const big = api.decorator.getState(editor)!.collapsed[0];
+		const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+			'vscode.executeHoverProvider', editor.document.uri, big.start);
+		const images = hovers.flatMap(h => h.contents).map(c => (c as vscode.MarkdownString).value ?? '')
+			.filter(c => c.includes('data:image/svg+xml'));
+		assert.strictEqual(images.length, 1);
+	});
+
 	test('reveals the formula under the cursor', () => {
 		const first = api.decorator.getState(editor)!.rendered[0];
 		editor.selection = new vscode.Selection(first.start.translate(0, 2), first.start.translate(0, 2));
