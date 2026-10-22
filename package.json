@@ -75,7 +75,7 @@
         "mathInline.foldDisplayMath": {
           "type": "boolean",
           "default": true,
-          "description": "Fold multi-line $$...$$ blocks into their \"show formula\" chip, and unfold them while the cursor is inside."
+          "description": "Fold multi-line $$...$$ blocks into their \"show formula\" chip, and unfold them while the cursor is inside. When off, a block only shows its chip if you fold it by hand."
         }
       }
     }

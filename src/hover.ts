@@ -10,6 +10,12 @@ export const HOVER_SCALE = 1.5;
  * Se agrega el mismo margen transparente a la izquierda de la imagen para que quede centrada.
  */
 const COPY_BUTTON_GUTTER = 20;
+/**
+ * @brief Largo máximo del Markdown de un hover; VS Code trunca lo que lo supera.
+ *
+ * Una URI `data:` truncada deja de ser una imagen y el hover muestra su texto.
+ */
+const MAX_MARKDOWN_LENGTH = 100_000;
 
 /**
  * @brief Proveedor de hover que muestra la fórmula ampliada al pasar el mouse sobre su código fuente.
@@ -50,14 +56,17 @@ export class MathHoverProvider implements vscode.HoverProvider {
 /**
  * @brief Arma el contenido de hover con la fórmula renderizada en modo display.
  *
- * Envuelve la imagen en un SVG con un margen transparente a la izquierda de
- * `COPY_BUTTON_GUTTER` píxeles, igual al espacio que VS Code reserva a la derecha
+ * Anida el `<svg>` de la fórmula dentro de un SVG con un margen transparente a la izquierda
+ * de `COPY_BUTTON_GUTTER` píxeles, igual al espacio que VS Code reserva a la derecha
  * para su botón de copiar, de modo que la fórmula quede centrada en el hover.
- * Lo usa `MathHoverProvider.provideHover`.
+ * Se anida el SVG (y no un `<image>` con su URI) para codificar en base64 una sola vez.
+ * Si el Markdown resultante supera `MAX_MARKDOWN_LENGTH`, devuelve un aviso de texto
+ * en lugar de la imagen. Lo usa `MathHoverProvider.provideHover`.
  *
  * @param tex Código TeX de la fórmula.
  * @param options Opciones de render (color y escala); `display` se fuerza a `true`.
- * @return Markdown con la imagen SVG codificada en base64, o `undefined` si el TeX no es válido.
+ * @return Markdown con la imagen SVG codificada en base64, un aviso de texto si es demasiado grande,
+ * o `undefined` si el TeX no es válido.
  */
 export function previewMarkdown(tex: string, options: RenderOptions): vscode.MarkdownString | undefined {
 	const result = render(tex, { ...options, display: true });
@@ -65,7 +74,13 @@ export function previewMarkdown(tex: string, options: RenderOptions): vscode.Mar
 		return undefined;
 	}
 	const width = result.width + COPY_BUTTON_GUTTER;
-	const padded = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${result.height}">`
-		+ `<image href="${result.uri}" x="${COPY_BUTTON_GUTTER}" width="${result.width}" height="${result.height}"/></svg>`;
-	return new vscode.MarkdownString(`![math](data:image/svg+xml;base64,${Buffer.from(padded).toString('base64')})`);
+	// Nest the formula's own <svg> instead of an <image> of its data URI, so it is base64-encoded only once.
+	const formula = Buffer.from(result.uri.slice(result.uri.indexOf(',') + 1), 'base64').toString()
+		.replace(/^<svg/, `<svg x="${COPY_BUTTON_GUTTER}"`);
+	const padded = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${result.height}">${formula}</svg>`;
+	const markdown = `![math](data:image/svg+xml;base64,${Buffer.from(padded).toString('base64')})`;
+	if (markdown.length > MAX_MARKDOWN_LENGTH) {
+		return new vscode.MarkdownString('Math Inline: this formula is too large to preview. Put the cursor on it to see its TeX.');
+	}
+	return new vscode.MarkdownString(markdown);
 }

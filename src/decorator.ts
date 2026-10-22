@@ -42,6 +42,8 @@ export interface EditorMathState {
 	errors: vscode.Range[];
 	/** Rangos de las fórmulas que se muestran como código porque el cursor las toca. */
 	revealed: vscode.Range[];
+	/** Rangos de los bloques `$$` que se muestran como código porque no están plegados. */
+	unfolded: vscode.Range[];
 }
 
 /** @brief Fórmulas parseadas de un documento, asociadas a la versión que se analizó. */
@@ -57,9 +59,9 @@ interface ParsedDocument {
  *
  * Oculta el código fuente de cada fórmula y muestra en su lugar la imagen; las fórmulas
  * con error se subrayan y las que tocan una selección se dejan como texto para poder editarlas.
- * Los bloques `$$` multilínea se muestran siempre como chip en su primera línea y, si
- * `mathInline.foldDisplayMath` está activo, se pliegan y despliegan automáticamente
- * (con `MathFoldingProvider` aportando las regiones).
+ * Los bloques `$$` multilínea se muestran como chip en su primera línea solo mientras están
+ * plegados; desplegados se ven como código. Si `mathInline.foldDisplayMath` está activo,
+ * se pliegan y despliegan automáticamente (con `MathFoldingProvider` aportando las regiones).
  * Las fórmulas que habría que achicar por debajo de `MIN_INLINE_SCALE` se muestran como un
  * chip `CHIP_TEXT`. El chip no lleva `hoverMessage`: la vista previa ampliada la aporta
  * `MathHoverProvider`, y al poner el cursor dentro de una de ellas se abre su hover automáticamente.
@@ -105,6 +107,7 @@ export class MathDecorator implements vscode.Disposable {
 	});
 	private readonly parsed = new Map<string, ParsedDocument>();
 	private readonly states = new WeakMap<vscode.TextEditor, EditorMathState>();
+	private readonly foldSignatures = new WeakMap<vscode.TextEditor, string>();
 	private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
 	private readonly disposables: vscode.Disposable[] = [];
 	private config: MathInlineConfig = getConfig();
@@ -118,7 +121,9 @@ export class MathDecorator implements vscode.Disposable {
 	 *
 	 * Además de `mathInline.*`, reacciona a los cambios de `editor.fontSize` y `editor.lineHeight`.
 	 * También se suscribe a `onDidChangeActiveTextEditor`, porque los comandos de plegado solo
-	 * alcanzan al editor activo y hay que actualizarlo cuando recibe el foco.
+	 * alcanzan al editor activo y hay que actualizarlo cuando recibe el foco. Con
+	 * `onDidChangeTextEditorVisibleRanges` (plegado, desplegado o scroll) actualiza el editor
+	 * solo si cambió `foldSignature`, porque el chip depende del estado de plegado.
 	 */
 	constructor() {
 		this.disposables.push(
@@ -130,6 +135,12 @@ export class MathDecorator implements vscode.Disposable {
 			// Folding commands only reach the active editor, so it needs an update when focus moves.
 			vscode.window.onDidChangeActiveTextEditor(editor => editor && this.update(editor)),
 			vscode.window.onDidChangeTextEditorSelection(e => this.update(e.textEditor)),
+			// Folding or unfolding a block changes the visible ranges, and the chip follows the fold state.
+			vscode.window.onDidChangeTextEditorVisibleRanges(e => {
+				if (this.foldSignatures.get(e.textEditor) !== this.foldSignature(e.textEditor)) {
+					this.update(e.textEditor);
+				}
+			}),
 			vscode.workspace.onDidChangeTextDocument(e => this.scheduleUpdate(e.document)),
 			vscode.workspace.onDidCloseTextDocument(doc => this.parsed.delete(doc.uri.toString())),
 			vscode.window.onDidChangeActiveColorTheme(() => this.updateAll()),
@@ -193,8 +204,8 @@ export class MathDecorator implements vscode.Disposable {
 	 *
 	 * Las fórmulas inline usan `inlineOptions()`. Las `$$...$$` de una sola línea usan el
 	 * mismo alto máximo pero en modo display y sin `textStyle`. Los bloques multilínea se
-	 * renderizan en modo display a tamaño completo, solo para detectar errores: siempre se
-	 * muestran como chip.
+	 * renderizan en modo display a tamaño completo, solo para detectar errores: nunca se
+	 * dibujan inline (se muestran como chip cuando están plegados).
 	 *
 	 * @param span Fórmula a renderizar.
 	 * @return Imagen renderizada o error de TeX.
@@ -217,7 +228,7 @@ export class MathDecorator implements vscode.Disposable {
 	 * Las fórmulas con error no cuentan.
 	 *
 	 * @param span Fórmula a examinar.
-	 * @return `true` si la fórmula se mostraría como chip.
+	 * @return `true` si la fórmula es grande y se mostraría como chip (los bloques `$$`, solo mientras estén plegados).
 	 */
 	isLarge(span: MathSpan): boolean {
 		const result = this.renderInEditor(span);
@@ -250,8 +261,12 @@ export class MathDecorator implements vscode.Disposable {
 	 * inválidas se subrayan con el mensaje de error, las que requerirían un achique menor
 	 * a `MIN_INLINE_SCALE` quedan como chip (`collapsed`) y el resto se reemplaza por su
 	 * imagen. Los `$$...$$` de una sola línea se renderizan en modo display. Los bloques
-	 * multilínea siempre son chip, y su decoración cubre solo la primera línea (el resto lo
-	 * oculta el plegado); los que tienen error o están revelados se despliegan. En los chips, `collapsedType` se aplica solo al `$` de apertura y el resto del
+	 * multilínea son chip solo si están plegados (ver `isFolded`), y su decoración cubre solo la
+	 * primera línea (el resto lo oculta el plegado). Los no plegados no llevan chip: van a
+	 * `unfolded` y se muestran como código, aunque se siguen incluyendo en las líneas a plegar.
+	 * Los que tienen error o están revelados se despliegan. Al final guarda la firma de plegado
+	 * (`foldSignature`) para que el listener de `visibleRanges` detecte cambios.
+	 * En los chips, `collapsedType` se aplica solo al `$` de apertura y el resto del
 	 * código se oculta con `chipSourceType`; no llevan `hoverMessage`, porque el mouse sobre el chip
 	 * cae dentro de la fórmula y la vista previa la da `MathHoverProvider`. Renderiza con
 	 * `textStyle` y con `maxHeight` igual al alto de línea del editor, para que las fórmulas
@@ -273,6 +288,7 @@ export class MathDecorator implements vscode.Disposable {
 		const chipSources: vscode.DecorationOptions[] = [];
 		const errors: vscode.DecorationOptions[] = [];
 		const revealed: vscode.Range[] = [];
+		const unfolded: vscode.Range[] = [];
 		const foldLines: number[] = [];
 		const unfoldLines: number[] = [];
 
@@ -298,6 +314,10 @@ export class MathDecorator implements vscode.Disposable {
 				if (block) {
 					unfoldLines.push(range.start.line);
 				}
+			} else if (block && !this.isFolded(editor, range.start.line)) {
+				// Unfolded (by hand, or not folded yet): a chip over the visible TeX would only get in the way.
+				unfolded.push(range);
+				foldLines.push(range.start.line);
 			} else if (block || result.fit < MIN_INLINE_SCALE) {
 				// The preview comes from MathHoverProvider, since the opening `$` stays as hoverable text under the chip.
 				collapsed.push(range);
@@ -328,12 +348,45 @@ export class MathDecorator implements vscode.Disposable {
 		editor.setDecorations(this.chipSourceType, chipSources);
 		editor.setDecorations(this.errorType, errors);
 		this.states.set(editor, {
-			rendered: hidden.map(d => d.range), collapsed, errors: errors.map(d => d.range), revealed,
+			rendered: hidden.map(d => d.range), collapsed, errors: errors.map(d => d.range), revealed, unfolded,
 		});
+		this.foldSignatures.set(editor, this.foldSignature(editor));
 		this.scheduleHover(editor);
 		if (this.config.foldDisplayMath) {
 			this.syncFolds(editor, foldLines, unfoldLines);
 		}
+	}
+
+	/**
+	 * @brief Indica si el bloque `$$` que empieza en una línea está plegado.
+	 *
+	 * La API no expone el estado de plegado, pero las líneas plegadas no forman parte de
+	 * `visibleRanges`: el bloque se considera plegado si su segunda línea no es visible.
+	 * Un bloque fuera de la pantalla cuenta como plegado, lo que no se nota y evita que un
+	 * bloque plegado muestre su código un instante al entrar en pantalla.
+	 *
+	 * @param editor Editor consultado.
+	 * @param startLine Línea del `$$` de apertura.
+	 * @return `true` si la línea siguiente a `startLine` no es visible.
+	 */
+	private isFolded(editor: vscode.TextEditor, startLine: number): boolean {
+		return !editor.visibleRanges.some(r => r.start.line <= startLine + 1 && startLine + 1 <= r.end.line);
+	}
+
+	/**
+	 * @brief Resume el estado de plegado de los bloques `$$` de un editor.
+	 *
+	 * Permite saber, ante un cambio de `visibleRanges` (scroll o plegado), si algún bloque
+	 * cambió de estado y hay que actualizar las decoraciones.
+	 *
+	 * @param editor Editor consultado.
+	 * @return Cadena con un `1` por bloque plegado y un `0` por bloque desplegado, en orden.
+	 */
+	private foldSignature(editor: vscode.TextEditor): string {
+		return this.getSpans(editor.document)
+			.filter(isDisplayBlock)
+			.map(span => (this.isFolded(editor, editor.document.positionAt(span.start).line) ? '1' : '0'))
+			.join('');
 	}
 
 	/**

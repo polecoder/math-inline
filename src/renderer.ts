@@ -74,7 +74,9 @@ const cache = new Map<string, RenderResult>();
  * @brief Devuelve el documento de MathJax, creándolo en el primer uso.
  *
  * Configura TeX con todos los paquetes salvo `EXCLUDED_PACKAGES`, hace que los
- * errores de TeX se lancen como excepción y usa salida SVG sin caché de fuentes.
+ * errores de TeX se lancen como excepción y usa salida SVG con `fontCache: 'local'`:
+ * cada imagen define una sola vez cada glifo y lo reutiliza con `<use>`, lo que
+ * la mantiene autónoma y liviana.
  *
  * @return Documento de MathJax compartido por todos los renders.
  */
@@ -88,7 +90,8 @@ function getDocument(): MathDocument {
 				throw err;
 			},
 		});
-		const svg = new SVG({ fontCache: 'none' });
+		// Each image is standalone, so a local cache defines every glyph once and reuses it with <use>.
+		const svg = new SVG({ fontCache: 'local' });
 		doc = mathjax.document('', { InputJax: tex, OutputJax: svg });
 	}
 	return doc;
@@ -125,7 +128,9 @@ export function render(tex: string, options: RenderOptions): RenderResult {
  * @brief Convierte TeX a SVG con MathJax, sin usar la caché.
  *
  * Reescribe el SVG para que tenga dimensiones en píxeles, sin `style` en la raíz
- * y con `currentColor` reemplazado por el color pedido. Si `textStyle` está activo,
+ * y con `currentColor` reemplazado por el color pedido. Quita los atributos `data-*`
+ * de MathJax y normaliza los ids `MJX-<n>-` a `MJX-`, de modo que la salida sea
+ * determinista y liviana. Si `textStyle` está activo,
  * reemplaza `\dfrac` y `\dbinom` por `\frac` y `\binom` antes de convertir. Si
  * `display` está activo, MathJax convierte en modo display. Si el alto supera
  * `maxHeight`, escala proporcionalmente ancho, alto y `verticalAlign`, y deja en
@@ -166,6 +171,10 @@ function renderUncached(tex: string, { color, exPx, textStyle, maxHeight, displa
 			.replace(/ width="[^"]*"/, ` width="${width}"`)
 			.replace(/ height="[^"]*"/, ` height="${height}"`)
 			.replace(/ style="[^"]*"/, ''))
+		// MathJax's data-* attributes only matter to its own scripts and add a lot of weight.
+		.replace(/ data-[\w-]+="[^"]*"/g, '')
+		// Glyph ids carry a per-conversion counter; each image is standalone, so drop it to keep the output deterministic.
+		.replace(/MJX-\d+-/g, 'MJX-')
 		.replace(/currentColor/g, escapeXml(color));
 
 	return {

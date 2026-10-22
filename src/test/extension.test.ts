@@ -2,11 +2,33 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 import type { MathInlineApi } from '../extension';
 import { isError, render } from '../renderer';
+import { previewMarkdown } from '../hover';
 
 /** @brief Identificador de la extensión (`publisher.name`) usado para activarla en los tests. */
 const EXTENSION_ID = 'polecoder.math-inline';
 /** @brief Fórmula demasiado alta para mostrarse inline. */
 const BIG_TEX = String.raw`\left[\overline{X}_n\pm\dfrac{\sqrt{\overline{X}_n(1-\overline{X}_n)}\,z_{\alpha/2}}{\sqrt n}\right]`;
+
+/**
+ * @brief Espera la cantidad de milisegundos indicada.
+ *
+ * @param ms Milisegundos a esperar.
+ * @return Promesa que se resuelve pasado ese tiempo.
+ */
+function sleep(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * @brief Indica si una línea está dentro de las zonas visibles del editor (no plegada ni fuera de pantalla).
+ *
+ * @param editor Editor consultado.
+ * @param line Número de línea.
+ * @return `true` si alguna zona visible contiene la línea.
+ */
+function isVisible(editor: vscode.TextEditor, line: number): boolean {
+	return editor.visibleRanges.some(r => r.start.line <= line && line <= r.end.line);
+}
 
 suite('renderer', () => {
 	test('renders valid TeX to a sized SVG data URI', () => {
@@ -133,15 +155,30 @@ suite('Display math', () => {
 		editor = await vscode.window.showTextDocument(document);
 	});
 
-	test('renders single-line $$ inline and multi-line blocks as a chip', () => {
+	test('renders single-line $$ inline and folds multi-line blocks into a chip', async function () {
+		this.timeout(5000);
 		editor.selection = new vscode.Selection(0, 0, 0, 0);
 		api.decorator.update(editor);
+		await sleep(1000);
 		const state = api.decorator.getState(editor)!;
 		assert.strictEqual(state.rendered.length, 1);
 		assert.strictEqual(state.collapsed.length, 1);
 		assert.strictEqual(state.collapsed[0].start.line, 1);
 		assert.strictEqual(state.collapsed[0].end.line, 3);
 		assert.strictEqual(state.errors.length, 1);
+		assert.ok(isVisible(editor, 1), 'the chip line stays visible');
+		assert.ok(!isVisible(editor, 2), 'the block body is folded');
+		assert.ok(isVisible(editor, 5), 'a block with a TeX error is not folded');
+	});
+
+	test('unfolding a block by hand replaces its chip with the TeX', async () => {
+		await vscode.commands.executeCommand('editor.unfold', { selectionLines: [1], levels: 1, direction: 'up' });
+		await sleep(300);
+		const state = api.decorator.getState(editor)!;
+		assert.ok(isVisible(editor, 2));
+		assert.strictEqual(state.collapsed.length, 0);
+		assert.strictEqual(state.unfolded.length, 1);
+		assert.strictEqual(state.unfolded[0].start.line, 1);
 	});
 
 	test('reveals a block when the cursor is on one of its lines', () => {
@@ -160,20 +197,32 @@ suite('Display math', () => {
 		assert.ok(contents.some(c => c.includes('data:image/svg+xml')));
 	});
 
-	test('folds blocks shown as a chip and unfolds the one under the cursor', async function () {
+	test('unfolds the block under the cursor', async function () {
 		this.timeout(5000);
-		const isVisible = (line: number) => editor.visibleRanges.some(r => r.start.line <= line && line <= r.end.line);
 		editor.selection = new vscode.Selection(0, 0, 0, 0);
-		api.decorator.update(editor);
-		await new Promise(resolve => setTimeout(resolve, 1000));
-		assert.ok(isVisible(1), 'the chip line stays visible');
-		assert.ok(!isVisible(2), 'the block body is folded');
-		assert.ok(isVisible(5), 'a block with a TeX error is not folded');
+		await vscode.commands.executeCommand('editor.fold', { selectionLines: [1], levels: 1, direction: 'up' });
+		await sleep(300);
+		assert.ok(!isVisible(editor, 2));
 
 		editor.selection = new vscode.Selection(1, 1, 1, 1);
 		api.decorator.update(editor);
-		await new Promise(resolve => setTimeout(resolve, 300));
-		assert.ok(isVisible(2), 'the block under the cursor is unfolded');
+		await sleep(300);
+		assert.ok(isVisible(editor, 2), 'the block under the cursor is unfolded');
+	});
+
+	test('previews long blocks within the hover size limit', () => {
+		const aligned = (count: number) => '\\begin{aligned}' + Array.from({ length: count },
+			(_, i) => String.raw`&\int_0^{${i}} \frac{\sin x}{x}\,dx = \sum_{k=0}^{\infty} a_k\\`).join('\n') + '\\end{aligned}';
+		const options = api.decorator.renderOptions(1.5);
+
+		const long = previewMarkdown(aligned(20), options);
+		assert.ok(long);
+		assert.ok(long.value.startsWith('![math](data:image/svg+xml;base64,'));
+		assert.ok(long.value.length <= 100_000, `hover Markdown is ${long.value.length} characters long`);
+
+		// Past VS Code's limit the data URI would be cut and shown as text, so a notice is shown instead.
+		const huge = previewMarkdown(aligned(200), options);
+		assert.ok(huge && !huge.value.includes('data:'));
 	});
 
 	test('provides a folding range per block', async () => {
