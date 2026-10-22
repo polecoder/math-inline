@@ -2,6 +2,13 @@
 
 All notable changes to the "math-inline" extension are documented in this file, following [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- Display math. `$$...$$` on a single line is rendered in display style (or as a chip when too tall). Multi-line `$$` blocks fold into a **∑ show formula** chip with a display-mode preview on hover, and unfold while the cursor is inside them.
+- Setting `mathInline.foldDisplayMath` to turn off the automatic folding of `$$` blocks.
+
 ## [0.2.0] - 2026-10-21
 
 ### Added

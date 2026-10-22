@@ -15,7 +15,8 @@ const COPY_BUTTON_GUTTER = 20;
  * @brief Proveedor de hover que muestra la fórmula ampliada al pasar el mouse sobre su código fuente.
  *
  * También cubre las fórmulas grandes mostradas como chip, ya que el `$` de apertura transparente
- * queda bajo el chip y el mouse cae dentro de la fórmula.
+ * queda bajo el chip y el mouse cae dentro de la fórmula. En los bloques `$$` multilínea
+ * el hover aparece sobre cualquier línea del bloque, no solo la del chip.
  * Si la fórmula tiene errores de TeX no devuelve nada: el mensaje ya lo aporta la decoración de error.
  */
 export class MathHoverProvider implements vscode.HoverProvider {

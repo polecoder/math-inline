@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { MathDecorator } from './decorator';
 import { MathHoverProvider } from './hover';
+import { MathFoldingProvider } from './folding';
 import { SECTION, getConfig } from './config';
 
 /**
@@ -14,7 +15,7 @@ export interface MathInlineApi {
 /**
  * @brief Activa la extensión.
  *
- * Crea el decorador, registra el proveedor de hover para Markdown y el comando
+ * Crea el decorador, registra los proveedores de hover y de plegado para Markdown y el comando
  * `mathInline.toggle`, que alterna `mathInline.enabled` en la configuración global.
  *
  * @param context Contexto de la extensión, donde se registran los recursos a liberar.
@@ -26,6 +27,7 @@ export function activate(context: vscode.ExtensionContext): MathInlineApi {
 	context.subscriptions.push(
 		decorator,
 		vscode.languages.registerHoverProvider({ language: 'markdown' }, new MathHoverProvider(decorator)),
+		vscode.languages.registerFoldingRangeProvider({ language: 'markdown' }, new MathFoldingProvider(decorator)),
 		vscode.commands.registerCommand('mathInline.toggle', () =>
 			vscode.workspace.getConfiguration(SECTION).update('enabled', !getConfig().enabled, vscode.ConfigurationTarget.Global)),
 	);

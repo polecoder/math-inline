@@ -119,3 +119,67 @@ suite('MathDecorator', () => {
 		assert.strictEqual(api.decorator.getState(editor)!.rendered.length, 2);
 	});
 });
+
+suite('Display math', () => {
+	let api: MathInlineApi;
+	let editor: vscode.TextEditor;
+
+	suiteSetup(async () => {
+		api = await vscode.extensions.getExtension<MathInlineApi>(EXTENSION_ID)!.activate();
+		const document = await vscode.workspace.openTextDocument({
+			language: 'markdown',
+			content: 'Single line: $$x+y$$\n$$\n\\int_0^1 x\\,dx\n$$\n$$\n\\frac{a\n$$\n',
+		});
+		editor = await vscode.window.showTextDocument(document);
+	});
+
+	test('renders single-line $$ inline and multi-line blocks as a chip', () => {
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		assert.strictEqual(state.rendered.length, 1);
+		assert.strictEqual(state.collapsed.length, 1);
+		assert.strictEqual(state.collapsed[0].start.line, 1);
+		assert.strictEqual(state.collapsed[0].end.line, 3);
+		assert.strictEqual(state.errors.length, 1);
+	});
+
+	test('reveals a block when the cursor is on one of its lines', () => {
+		editor.selection = new vscode.Selection(2, 0, 2, 0);
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		assert.strictEqual(state.collapsed.length, 0);
+		assert.strictEqual(state.revealed.length, 1);
+		assert.strictEqual(state.revealed[0].start.line, 1);
+	});
+
+	test('hovering any line of a block shows its preview', async () => {
+		const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+			'vscode.executeHoverProvider', editor.document.uri, new vscode.Position(2, 3));
+		const contents = hovers.flatMap(h => h.contents).map(c => (c as vscode.MarkdownString).value ?? '');
+		assert.ok(contents.some(c => c.includes('data:image/svg+xml')));
+	});
+
+	test('folds blocks shown as a chip and unfolds the one under the cursor', async function () {
+		this.timeout(5000);
+		const isVisible = (line: number) => editor.visibleRanges.some(r => r.start.line <= line && line <= r.end.line);
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		api.decorator.update(editor);
+		await new Promise(resolve => setTimeout(resolve, 1000));
+		assert.ok(isVisible(1), 'the chip line stays visible');
+		assert.ok(!isVisible(2), 'the block body is folded');
+		assert.ok(isVisible(5), 'a block with a TeX error is not folded');
+
+		editor.selection = new vscode.Selection(1, 1, 1, 1);
+		api.decorator.update(editor);
+		await new Promise(resolve => setTimeout(resolve, 300));
+		assert.ok(isVisible(2), 'the block under the cursor is unfolded');
+	});
+
+	test('provides a folding range per block', async () => {
+		const ranges = await vscode.commands.executeCommand<vscode.FoldingRange[]>(
+			'vscode.executeFoldingRangeProvider', editor.document.uri);
+		assert.ok(ranges.some(r => r.start === 1 && r.end === 3));
+		assert.ok(ranges.some(r => r.start === 4 && r.end === 6));
+	});
+});

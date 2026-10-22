@@ -14,8 +14,23 @@ Not math: prices like $5 and $10, escaped \$x\$, and code `$x$`.
 $not math inside a fence$
 ```
 
-Display math is left untouched for now:
+Single-line display math renders in place: $$\int_0^1 x\,dx = \frac{1}{2}$$, and a taller one becomes a chip: $$\sum_{k=1}^{n} k^2$$.
+
+Multi-line display blocks fold into a chip; put the cursor on it to edit:
 
 $$
 \int_0^1 x\,dx = \frac{1}{2}
+$$
+
+$$
+\begin{aligned}
+(a+b)^2 &= a^2 + 2ab + b^2 \\
+(a-b)^2 &= a^2 - 2ab + b^2
+\end{aligned}
+$$
+
+A block with a TeX error stays unfolded and underlined:
+
+$$
+\frac{a
 $$

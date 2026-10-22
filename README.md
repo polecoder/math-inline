@@ -9,6 +9,8 @@ Renders inline `$...$` math in Markdown files **directly in the editor**, not ju
 - Invalid TeX is underlined, and hovering it shows the error.
 - Hover a formula's source to see a larger rendering.
 - Formulas are scaled down to fit the line. Those that would get too small (matrices, stacked fractions, big operators with limits) are replaced by a **∑ show formula** chip: hover it to see the formula in display mode. While you edit one, the preview opens next to the cursor.
+- Display math written on one line, like `$$\int_0^1 x\,dx$$`, is rendered in display style the same way, and becomes a chip when it would not fit.
+- Multi-line `$$ ... $$` blocks are folded into a chip on their first line. Put the cursor on the chip to unfold the block and edit its TeX; the preview opens next to the cursor while you type, and the block folds again when you leave. Blocks with TeX errors stay unfolded and underlined.
 
 Dollar signs follow Pandoc's rules, so `$5 and $10` is not math: the opening `$` must not be followed by a space, and the closing `$` must not be preceded by a space nor followed by a digit. Escaped dollars (`\$`), code spans and code blocks are ignored.
 
@@ -19,12 +21,13 @@ Dollar signs follow Pandoc's rules, so `$5 and $10` is not math: the opening `$`
 | `mathInline.enabled` | `true` | Render inline math in Markdown editors. |
 | `mathInline.scale` | `1` | Size of formulas relative to the editor font size. |
 | `mathInline.color` | `""` | CSS color for formulas. Empty picks one based on the theme (light/dark/high contrast). |
+| `mathInline.foldDisplayMath` | `true` | Fold multi-line `$$` blocks into their chip, and unfold them while the cursor is inside. When off, the chip is shown above the block's TeX. |
 
 Command: **Math Inline: Toggle Inline Math Rendering**, bound to <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> (<kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> on macOS) in Markdown editors. Press it once to see the TeX source of every formula, and again to see them rendered. To use another shortcut, open **Preferences: Open Keyboard Shortcuts** and search for `mathInline.toggle`.
 
 ## Known limitations
 
-- Display math (`$$...$$`) is not rendered yet; it is left as source.
+- Multi-line display math is never drawn in the editor itself, only in the chip's hover, since VS Code cannot make room for it. If you unfold a block by hand, it folds again after you edit the document.
 - VS Code cannot change line heights, so tall formulas are scaled down or collapsed into a chip instead of being shown at their natural size. Use `mathInline.scale` to adjust the overall size.
 - With word wrap on, VS Code wraps lines based on the length of the (hidden) TeX source, so a line full of formulas may wrap earlier than it looks like it should.
 - Extensions cannot read theme colors, so the default formula color depends only on the theme kind. Set `mathInline.color` to match your theme exactly.
