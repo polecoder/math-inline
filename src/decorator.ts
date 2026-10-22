@@ -17,9 +17,9 @@ const EX_PER_EM = 0.5;
 /** @brief Achique mínimo aceptable inline; las fórmulas que necesitan más se muestran como chip. */
 const MIN_INLINE_SCALE = 0.8;
 /** @brief Texto del chip que reemplaza a las fórmulas demasiado grandes. */
-const CHIP_TEXT = '∑ ver fórmula';
+const CHIP_TEXT = '∑ show formula';
 /** @brief Ancho del chip, en caracteres (`ch`) de la fuente del editor. */
-const CHIP_WIDTH_CH = 15;
+const CHIP_WIDTH_CH = 16;
 /** @brief Espera en milisegundos antes de abrir el hover de una fórmula grande bajo el cursor. */
 const HOVER_DELAY_MS = 300;
 

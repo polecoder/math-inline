@@ -11,7 +11,7 @@ Con `editor.wordWrap` activo (por defecto en Markdown), VS Code parte las línea
 
 ### 2. Las fórmulas altas pisan las líneas vecinas
 Matrices, fracciones y sumas con límites se dibujan a tamaño real y se superponen con la línea de arriba y la de abajo (ver `\begin{pmatrix}` en el sample). VS Code no permite cambiar la altura de una línea.
-- Opciones: escalar automáticamente las fórmulas que superen la altura de línea (con un tope mínimo), o un setting `mathInline.maxHeight` con `fit` / `overflow`.
+- **Resuelto en v0.2.0:** se achican hasta entrar en la línea y, si haría falta bajar de 0,8, se muestran como chip con vista previa en el hover.
 
 ### 3. El color por defecto solo depende del tipo de tema
 Una extensión no puede leer los colores del tema, así que `resolveColor` (`src/config.ts`) elige entre 4 colores fijos según `ColorThemeKind`. En temas con un foreground distinto del gris estándar la fórmula no coincide con el texto.
@@ -58,10 +58,10 @@ Falta probar un archivo con ~1000 fórmulas. Cada cambio de selección recorre t
 ### 14. Bundle grande (1.74 MB minificado)
 Se cargan todos los paquetes TeX de MathJax (`AllPackages`). Se podría importar solo un subconjunto (base, ams, newcommand, boldsymbol, color, cancel, ...) o cargar MathJax de forma diferida en el primer render.
 
-### 15. Falta metadata del Marketplace
-- Icono PNG 128×128 (campo `icon` en `package.json`).
-- GIF de demo en el README (hay un TODO).
+### 15. Metadata del Marketplace
+- ~~Icono PNG 128×128~~: agregado en v0.2.0 (`images/icon.png`).
+- Falta un GIF o captura de demo en el README.
 - Confirmar el publisher `polecoder` (tiene que existir en el Marketplace) y la licencia MIT asumida.
 
-### 16. Restos del scaffold
-`vsc-extension-quickstart.md` sigue en el repo (ya está excluido del `.vsix`); se puede borrar.
+### 16. ~~Restos del scaffold~~
+Resuelto en v0.2.0: se borró `vsc-extension-quickstart.md`.

@@ -17,3 +17,5 @@ esbuild.js
 ISSUES.md
 .claude/**
 CLAUDE.md
+*.vsix
+images/*.svg

@@ -2,8 +2,13 @@
   "name": "math-inline",
   "displayName": "Math Inline",
   "description": "Renders inline $...$ math in Markdown files directly inside the editor.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "polecoder",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#3b4fb8",
+    "theme": "dark"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -12,6 +17,7 @@
   "bugs": {
     "url": "https://github.com/polecoder/math-inline/issues"
   },
+  "homepage": "https://github.com/polecoder/math-inline#readme",
   "keywords": [
     "markdown",
     "math",
