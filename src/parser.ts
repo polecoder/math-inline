@@ -1,13 +1,15 @@
 /**
- * @brief Fórmula inline hallada en un documento Markdown.
+ * @brief Fórmula hallada en un documento Markdown.
  */
 export interface MathSpan {
-	/** Offset of the opening `$`. */
+	/** Offset of the opening `$` (or `$$`). */
 	start: number;
-	/** Offset just past the closing `$`. */
+	/** Offset just past the closing `$` (or `$$`). */
 	end: number;
 	/** TeX source between the delimiters. */
 	tex: string;
+	/** `true` for display math (`$$...$$`); absent for inline math. */
+	display?: boolean;
 }
 
 /** @brief Detecta la línea de apertura o cierre de un bloque de código cercado (``` o ~~~); el grupo 1 es el cerco. */
@@ -16,28 +18,30 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const INDENTED_CODE = /^(?: {4}|\t)/;
 
 /**
- * @brief Busca las fórmulas inline (`$...$`) de un documento Markdown.
+ * @brief Busca las fórmulas inline (`$...$`) y de bloque (`$$...$$`) de un documento Markdown.
  *
  * Sigue las reglas de Pandoc: el `$` de apertura no puede ir seguido de un espacio,
  * y el de cierre no puede ir precedido de un espacio ni seguido de un dígito.
- * Se ignoran el código (cercado, con sangría y en línea), los `\$` escapados y
- * las fórmulas de bloque `$$...$$`. Una fórmula inline no cruza líneas.
+ * Se ignoran el código (cercado, con sangría y en línea) y los `\$` escapados.
+ * Una fórmula inline no cruza líneas; una de bloque puede ocupar varias, pero no
+ * cruzar una línea en blanco, y si no se cierra (o queda vacía) se descarta.
  *
  * @param text Contenido completo del documento.
  * @return Fórmulas halladas, en orden de aparición, con offsets sobre `text`.
  */
-export function findInlineMath(text: string): MathSpan[] {
+export function findMath(text: string): MathSpan[] {
 	const spans: MathSpan[] = [];
 	const lines = text.split('\n');
 	let offset = 0;
 	let fence: string | undefined;
-	let inDisplay = false;
+	let displayStart: number | undefined;
 	let prevBlank = true;
 
 	for (const rawLine of lines) {
 		const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
 		const lineStart = offset;
 		offset += rawLine.length + 1;
+		const inDisplay = displayStart !== undefined;
 
 		const fenceMatch = FENCE.exec(line);
 		if (fence !== undefined) {
@@ -58,26 +62,51 @@ export function findInlineMath(text: string): MathSpan[] {
 		}
 		prevBlank = blank;
 		if (blank) {
-			// Display math cannot span a blank line.
-			inDisplay = false;
+			// Display math cannot span a blank line: an unclosed block is dropped.
+			displayStart = undefined;
 			continue;
 		}
 
-		inDisplay = scanLine(line, lineStart, inDisplay, spans);
+		displayStart = scanLine(text, line, lineStart, displayStart, spans);
 	}
 	return spans;
 }
 
 /**
- * @brief Escanea una línea y agrega a `spans` las fórmulas inline que encuentra.
+ * @brief Busca las fórmulas inline (`$...$`) de un documento Markdown.
  *
+ * Igual que `findMath`, pero descarta las fórmulas de bloque `$$...$$`.
+ *
+ * @param text Contenido completo del documento.
+ * @return Fórmulas inline halladas, en orden de aparición, con offsets sobre `text`.
+ */
+export function findInlineMath(text: string): MathSpan[] {
+	return findMath(text).filter(span => !span.display);
+}
+
+/**
+ * @brief Indica si una fórmula es un bloque `$$...$$` que ocupa más de una línea.
+ *
+ * @param span Fórmula a examinar.
+ * @return `true` si es display math y su TeX contiene un salto de línea.
+ */
+export function isDisplayBlock(span: MathSpan): boolean {
+	return span.display === true && span.tex.includes('\n');
+}
+
+/**
+ * @brief Escanea una línea y agrega a `spans` las fórmulas que se cierran en ella.
+ *
+ * @param text Contenido completo del documento, del que se extrae el TeX de los bloques multilínea.
  * @param line Línea sin el salto de línea final.
  * @param lineStart Offset del inicio de la línea en el documento.
- * @param inDisplay Si la línea empieza dentro de un bloque `$$`.
+ * @param displayStart Offset del `$$` de apertura si la línea empieza dentro de un bloque, o `undefined`.
  * @param spans Lista a la que se agregan las fórmulas halladas.
- * @return `true` si al terminar la línea sigue abierto un bloque `$$`.
+ * @return Offset del `$$` de apertura si al terminar la línea sigue abierto un bloque, o `undefined`.
  */
-function scanLine(line: string, lineStart: number, inDisplay: boolean, spans: MathSpan[]): boolean {
+function scanLine(
+	text: string, line: string, lineStart: number, displayStart: number | undefined, spans: MathSpan[],
+): number | undefined {
 	let i = 0;
 	while (i < line.length) {
 		const ch = line[i];
@@ -85,9 +114,13 @@ function scanLine(line: string, lineStart: number, inDisplay: boolean, spans: Ma
 			i += 2;
 			continue;
 		}
-		if (inDisplay) {
+		if (displayStart !== undefined) {
 			if (line.startsWith('$$', i)) {
-				inDisplay = false;
+				const tex = text.slice(displayStart + 2, lineStart + i).replace(/\r/g, '');
+				if (tex.trim() !== '') {
+					spans.push({ start: displayStart, end: lineStart + i + 2, tex, display: true });
+				}
+				displayStart = undefined;
 				i += 2;
 			} else {
 				i++;
@@ -109,7 +142,7 @@ function scanLine(line: string, lineStart: number, inDisplay: boolean, spans: Ma
 			continue;
 		}
 		if (line[i + 1] === '$') {
-			inDisplay = true;
+			displayStart = lineStart + i;
 			i += 2;
 			continue;
 		}
@@ -121,7 +154,7 @@ function scanLine(line: string, lineStart: number, inDisplay: boolean, spans: Ma
 		spans.push({ start: lineStart + i, end: lineStart + close + 1, tex: line.slice(i + 1, close) });
 		i = close + 1;
 	}
-	return inDisplay;
+	return displayStart;
 }
 
 /**

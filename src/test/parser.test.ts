@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { findInlineMath } from '../parser';
+import { findInlineMath, findMath, isDisplayBlock } from '../parser';
 
 /**
  * @brief Extrae solo el TeX de cada fórmula inline encontrada.
@@ -68,5 +68,43 @@ suite('findInlineMath', () => {
 		assert.deepStrictEqual(findInlineMath(''), []);
 		assert.deepStrictEqual(texts('$$'), []);
 		assert.deepStrictEqual(texts('$'), []);
+	});
+});
+
+suite('findMath', () => {
+	test('finds single-line display math with offsets', () => {
+		const source = 'See $$x^2$$ and $y$.';
+		const [display, inline] = findMath(source);
+		assert.deepStrictEqual(display, { start: 4, end: 11, tex: 'x^2', display: true });
+		assert.strictEqual(source.slice(display.start, display.end), '$$x^2$$');
+		assert.deepStrictEqual(inline, { start: 16, end: 19, tex: 'y' });
+	});
+
+	test('finds multi-line display blocks', () => {
+		const source = 'Intro\n$$\n\\int_0^1 x\\,dx\n$$\nafter $z$';
+		const [block, inline] = findMath(source);
+		assert.strictEqual(block.tex, '\n\\int_0^1 x\\,dx\n');
+		assert.strictEqual(source.slice(block.start, block.end), '$$\n\\int_0^1 x\\,dx\n$$');
+		assert.ok(isDisplayBlock(block));
+		assert.strictEqual(inline.tex, 'z');
+	});
+
+	test('strips carriage returns from block TeX', () => {
+		const [block] = findMath('$$\r\na\r\n$$\r\n');
+		assert.strictEqual(block.tex, '\na\n');
+	});
+
+	test('drops unclosed, empty and blank-line-crossing blocks', () => {
+		assert.deepStrictEqual(findMath('$$\na\n\nb\n$$'), []);
+		assert.deepStrictEqual(findMath('$$\na'), []);
+		assert.deepStrictEqual(findMath('$$ $$ and $$\n$$'), []);
+	});
+
+	test('ignores display math inside code', () => {
+		assert.deepStrictEqual(findMath('```\n$$a$$\n```\n`$$b$$`'), []);
+	});
+
+	test('isDisplayBlock is false for inline and single-line display math', () => {
+		assert.deepStrictEqual(findMath('$a$ $$b$$').map(isDisplayBlock), [false, false]);
 	});
 });
