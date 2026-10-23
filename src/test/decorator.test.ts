@@ -1,0 +1,370 @@
+import * as assert from 'assert';
+import * as vscode from 'vscode';
+import { MathDecorator } from '../decorator';
+import type { MathInlineApi } from '../extension';
+import { BIG_TEX, activateExtension, openEditor, setGlobalConfig, sleep, waitFor } from './helpers';
+
+/** @brief Espera con la que se afirma que NO se abrió un hover (mayor que el retardo de la extensión, 300 ms). */
+const NO_HOVER_WAIT_MS = 700;
+/** @brief Espera con la que se afirma que NO hubo una actualización (mayor que el debounce de la extensión, 150 ms). */
+const NO_UPDATE_WAIT_MS = 400;
+
+/**
+ * @brief Crea un rango de una sola línea.
+ *
+ * @param line Línea.
+ * @param start Columna inicial.
+ * @param end Columna final.
+ * @return Rango correspondiente.
+ */
+function range(line: number, start: number, end: number): vscode.Range {
+	return new vscode.Range(line, start, line, end);
+}
+
+/**
+ * @brief Coloca una única selección vacía y actualiza el decorador de forma sincrónica.
+ *
+ * @param api API de la extensión.
+ * @param editor Editor a modificar.
+ * @param line Línea del cursor.
+ * @param column Columna del cursor.
+ */
+function placeCursor(api: MathInlineApi, editor: vscode.TextEditor, line: number, column: number): void {
+	editor.selection = new vscode.Selection(line, column, line, column);
+	api.decorator.update(editor);
+}
+
+suite('MathDecorator behavior', () => {
+	let api: MathInlineApi;
+
+	suiteSetup(async () => {
+		api = await activateExtension();
+	});
+
+	suite('update', () => {
+		test('does nothing for editors that are not Markdown', async () => {
+			const editor = await openEditor('$x^2$', 'plaintext');
+			api.decorator.update(editor);
+			assert.strictEqual(api.decorator.getState(editor), undefined);
+		});
+
+		test('reports the exact range of each formula on every line', async () => {
+			const editor = await openEditor('a $x$\n\nb $y$ c $z$\n');
+			placeCursor(api, editor, 1, 0);
+			assert.deepStrictEqual(api.decorator.getState(editor), {
+				rendered: [range(0, 2, 5), range(2, 2, 5), range(2, 8, 11)],
+				collapsed: [],
+				errors: [],
+				revealed: [],
+			});
+		});
+
+		test('reveals a formula when the cursor touches either delimiter', async () => {
+			const editor = await openEditor('a $x$ b');
+			placeCursor(api, editor, 0, 2);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.revealed, [range(0, 2, 5)]);
+			placeCursor(api, editor, 0, 5);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.revealed, [range(0, 2, 5)]);
+			placeCursor(api, editor, 0, 1);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.revealed, []);
+			placeCursor(api, editor, 0, 6);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.revealed, []);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.rendered, [range(0, 2, 5)]);
+		});
+
+		test('reveals every formula that a selection overlaps', async () => {
+			const editor = await openEditor('$a$ $b$ $c$');
+			editor.selection = new vscode.Selection(0, 2, 0, 5);
+			api.decorator.update(editor);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.revealed, [range(0, 0, 3), range(0, 4, 7)]);
+			assert.deepStrictEqual(state.rendered, [range(0, 8, 11)]);
+		});
+
+		test('honours multiple cursors', async () => {
+			const editor = await openEditor('$a$ $b$ $c$');
+			editor.selections = [new vscode.Selection(0, 1, 0, 1), new vscode.Selection(0, 9, 0, 9)];
+			api.decorator.update(editor);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.revealed, [range(0, 0, 3), range(0, 8, 11)]);
+			assert.deepStrictEqual(state.rendered, [range(0, 4, 7)]);
+		});
+
+		test('shows a formula with a TeX error as source when the cursor is inside it', async () => {
+			const editor = await openEditor('$\\frac{a$');
+			placeCursor(api, editor, 0, 0);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.errors, []);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.revealed, [range(0, 0, 9)]);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.rendered, []);
+		});
+
+		test('flags errors and collapses big formulas without touching the others', async () => {
+			const editor = await openEditor(`$x$ $\\frac{a$ $${BIG_TEX}$`);
+			editor.selection = new vscode.Selection(0, 0, 0, 0);
+			// The cursor touches `$x$`, so it is revealed; the other two are classified.
+			api.decorator.update(editor);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.revealed, [range(0, 0, 3)]);
+			assert.deepStrictEqual(state.errors, [range(0, 4, 13)]);
+			assert.deepStrictEqual(state.collapsed, [range(0, 14, 14 + BIG_TEX.length + 2)]);
+			assert.deepStrictEqual(state.rendered, []);
+		});
+
+		test('ignores dollars that are not formulas', async () => {
+			const editor = await openEditor('costs \\$5 and `$x$`\n');
+			placeCursor(api, editor, 0, 0);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual([state.rendered, state.collapsed, state.errors, state.revealed], [[], [], [], []]);
+		});
+
+		test('leaves an empty document without decorations', async () => {
+			const editor = await openEditor('');
+			api.decorator.update(editor);
+			assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [] });
+		});
+	});
+
+	suite('configuration', () => {
+		test('clears every decoration while mathInline.enabled is false', async () => {
+			const editor = await openEditor(`$x$ $y$ $\\frac{a$ $${BIG_TEX}$`);
+			placeCursor(api, editor, 0, 0);
+			try {
+				await setGlobalConfig('mathInline', 'enabled', false);
+				api.decorator.update(editor);
+				assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [] });
+			} finally {
+				await setGlobalConfig('mathInline', 'enabled', undefined);
+			}
+			assert.strictEqual(api.decorator.getState(editor)!.rendered.length, 1);
+		});
+
+		test('refreshes the visible editors when the configuration changes', async () => {
+			const editor = await openEditor('$\\frac{a}{b}$ tail');
+			placeCursor(api, editor, 0, 17);
+			assert.strictEqual(api.decorator.getState(editor)!.rendered.length, 1);
+			const before = api.decorator.getState(editor);
+			try {
+				// A big scale pushes the fraction past the one-line limit, so it turns into a chip.
+				await setGlobalConfig('mathInline', 'scale', 4);
+				const after = api.decorator.getState(editor)!;
+				assert.notStrictEqual(after, before);
+				assert.deepStrictEqual(after.collapsed, [range(0, 0, 13)]);
+				assert.deepStrictEqual(after.rendered, []);
+			} finally {
+				await setGlobalConfig('mathInline', 'scale', undefined);
+			}
+			assert.deepStrictEqual(api.decorator.getState(editor)!.rendered, [range(0, 0, 13)]);
+		});
+
+		test('refreshes the editors when editor.lineHeight changes', async () => {
+			const editor = await openEditor('$\\frac{a}{b}$ tail');
+			placeCursor(api, editor, 0, 17);
+			try {
+				await setGlobalConfig('editor', 'lineHeight', 8);
+				assert.deepStrictEqual(api.decorator.getState(editor)!.collapsed, [range(0, 0, 13)]);
+			} finally {
+				await setGlobalConfig('editor', 'lineHeight', undefined);
+			}
+			assert.deepStrictEqual(api.decorator.getState(editor)!.collapsed, []);
+		});
+
+		test('renderOptions combines font size, mathInline.scale and the extra scale', async () => {
+			try {
+				await setGlobalConfig('editor', 'fontSize', 20);
+				await setGlobalConfig('mathInline', 'scale', 2);
+				assert.strictEqual(api.decorator.renderOptions().exPx, 20);
+				assert.strictEqual(api.decorator.renderOptions(1.5).exPx, 30);
+			} finally {
+				await setGlobalConfig('mathInline', 'scale', undefined);
+				await setGlobalConfig('editor', 'fontSize', undefined);
+			}
+		});
+
+		test('renderOptions uses the configured color', async () => {
+			try {
+				await setGlobalConfig('mathInline', 'color', ' #ffcc00 ');
+				assert.strictEqual(api.decorator.renderOptions().color, '#ffcc00');
+			} finally {
+				await setGlobalConfig('mathInline', 'color', undefined);
+			}
+		});
+	});
+
+	suite('isLarge', () => {
+		test('is true only for formulas that need shrinking below the inline limit', () => {
+			assert.strictEqual(api.decorator.isLarge(BIG_TEX), true);
+			assert.strictEqual(api.decorator.isLarge('x^2'), false);
+		});
+
+		test('is false for formulas with TeX errors', () => {
+			assert.strictEqual(api.decorator.isLarge(String.raw`\frac{a`), false);
+		});
+	});
+
+	suite('getSpans', () => {
+		test('caches the parse per document version', async () => {
+			const editor = await openEditor('$a$');
+			const first = api.decorator.getSpans(editor.document);
+			assert.strictEqual(api.decorator.getSpans(editor.document), first);
+			await editor.edit(b => b.insert(new vscode.Position(0, 3), ' $b$'));
+			const second = api.decorator.getSpans(editor.document);
+			assert.notStrictEqual(second, first);
+			assert.deepStrictEqual(second.map(s => s.tex), ['a', 'b']);
+		});
+	});
+
+	suite('document edits', () => {
+		test('updates the decorations after typing, once the debounce elapses', async () => {
+			const editor = await openEditor('plain\n');
+			placeCursor(api, editor, 0, 0);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.rendered, []);
+			await editor.edit(b => b.insert(new vscode.Position(1, 0), '$x$'));
+			editor.selection = new vscode.Selection(0, 0, 0, 0);
+			await waitFor(() => api.decorator.getState(editor)!.rendered.length === 1);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.rendered, [range(1, 0, 3)]);
+		});
+
+		test('coalesces a burst of edits into one refresh', async () => {
+			const editor = await openEditor('plain\n');
+			placeCursor(api, editor, 0, 0);
+			const before = api.decorator.getState(editor);
+			await editor.edit(b => b.insert(new vscode.Position(1, 0), '$'));
+			await editor.edit(b => b.insert(new vscode.Position(1, 1), 'x'));
+			await editor.edit(b => b.insert(new vscode.Position(1, 2), '$'));
+			editor.selection = new vscode.Selection(0, 0, 0, 0);
+			await waitFor(() => api.decorator.getState(editor)!.rendered.length === 1);
+			assert.notStrictEqual(api.decorator.getState(editor), before);
+		});
+
+		test('editing a document that is not Markdown does not decorate it', async () => {
+			const editor = await openEditor('', 'plaintext');
+			await editor.edit(b => b.insert(new vscode.Position(0, 0), '$x$'));
+			await sleep(NO_UPDATE_WAIT_MS);
+			assert.strictEqual(api.decorator.getState(editor), undefined);
+		});
+	});
+
+	suite('hover of big formulas', () => {
+		let calls: number;
+		let provider: vscode.Disposable;
+		const bigLine = `Big: $${BIG_TEX}$ end\n`;
+
+		suiteSetup(() => {
+			calls = 0;
+			// `editor.action.showHover` asks every provider; counting our calls tells us the command ran.
+			provider = vscode.languages.registerHoverProvider({ language: 'markdown' }, {
+				provideHover: () => {
+					calls++;
+					return undefined;
+				},
+			});
+		});
+
+		suiteTeardown(() => provider.dispose());
+
+		test('opens the hover when the cursor moves inside a big formula', async () => {
+			const editor = await openEditor(bigLine);
+			placeCursor(api, editor, 0, 0);
+			const before = calls;
+			placeCursor(api, editor, 0, 10);
+			await waitFor(() => calls > before);
+		});
+
+		test('opens it again after the cursor leaves and re-enters the formula', async () => {
+			const editor = await openEditor(bigLine);
+			placeCursor(api, editor, 0, 10);
+			await waitFor(() => calls > 0);
+			placeCursor(api, editor, 0, 0);
+			const before = calls;
+			placeCursor(api, editor, 0, 12);
+			await waitFor(() => calls > before);
+		});
+
+		test('cancels the pending hover when the cursor leaves the formula first', async () => {
+			const editor = await openEditor(bigLine);
+			placeCursor(api, editor, 0, 0);
+			await sleep(NO_HOVER_WAIT_MS);
+			const before = calls;
+			placeCursor(api, editor, 0, 10);
+			placeCursor(api, editor, 0, 0);
+			await sleep(NO_HOVER_WAIT_MS);
+			assert.strictEqual(calls, before);
+		});
+
+		test('does not open it for a small formula', async () => {
+			const editor = await openEditor('Small: $x^2$ end\n');
+			placeCursor(api, editor, 0, 0);
+			await sleep(NO_HOVER_WAIT_MS);
+			const before = calls;
+			placeCursor(api, editor, 0, 10);
+			await sleep(NO_HOVER_WAIT_MS);
+			assert.strictEqual(calls, before);
+		});
+
+		test('does not open it while text is selected', async () => {
+			const editor = await openEditor(bigLine);
+			placeCursor(api, editor, 0, 0);
+			await sleep(NO_HOVER_WAIT_MS);
+			const before = calls;
+			editor.selection = new vscode.Selection(0, 8, 0, 12);
+			api.decorator.update(editor);
+			await sleep(NO_HOVER_WAIT_MS);
+			assert.strictEqual(calls, before);
+		});
+
+		test('does not open it with several cursors', async () => {
+			const editor = await openEditor(bigLine);
+			placeCursor(api, editor, 0, 0);
+			await sleep(NO_HOVER_WAIT_MS);
+			const before = calls;
+			editor.selections = [new vscode.Selection(0, 10, 0, 10), new vscode.Selection(0, 12, 0, 12)];
+			api.decorator.update(editor);
+			await sleep(NO_HOVER_WAIT_MS);
+			assert.strictEqual(calls, before);
+		});
+
+		test('does not open it when the extension is disabled', async () => {
+			const editor = await openEditor(bigLine);
+			placeCursor(api, editor, 0, 0);
+			try {
+				await setGlobalConfig('mathInline', 'enabled', false);
+				await sleep(NO_HOVER_WAIT_MS);
+				const before = calls;
+				placeCursor(api, editor, 0, 10);
+				await sleep(NO_HOVER_WAIT_MS);
+				assert.strictEqual(calls, before);
+			} finally {
+				await setGlobalConfig('mathInline', 'enabled', undefined);
+			}
+		});
+
+		test('does not open it for an editor that is not the active one', async () => {
+			const background = await openEditor(bigLine);
+			const active = await openEditor('other\n');
+			// showHover works on the active editor, so its cursor sits on text that any hover provider is asked about.
+			active.selection = new vscode.Selection(0, 2, 0, 2);
+			placeCursor(api, background, 0, 0);
+			await sleep(NO_HOVER_WAIT_MS);
+			const before = calls;
+			assert.notStrictEqual(vscode.window.activeTextEditor, background);
+			placeCursor(api, background, 0, 10);
+			api.decorator.update(background);
+			await sleep(NO_HOVER_WAIT_MS);
+			assert.strictEqual(calls, before);
+			assert.strictEqual(vscode.window.activeTextEditor, active);
+		});
+	});
+
+	suite('dispose', () => {
+		test('cancels pending refreshes and stops listening', async () => {
+			const editor = await openEditor('plain\n');
+			const decorator = new MathDecorator();
+			const before = decorator.getState(editor);
+			assert.ok(before);
+			await editor.edit(b => b.insert(new vscode.Position(1, 0), '$x$'));
+			decorator.dispose();
+			await sleep(NO_UPDATE_WAIT_MS);
+			assert.strictEqual(decorator.getState(editor), before);
+		});
+	});
+});
