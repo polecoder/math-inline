@@ -2,7 +2,8 @@ import * as assert from "assert";
 import * as vscode from "vscode";
 import type { MathInlineApi } from "../extension";
 import { isError, render } from "../renderer";
-import { BIG_TEX, EXTENSION_ID } from "./helpers";
+import { previewMarkdown } from "../hover";
+import { BIG_TEX, EXTENSION_ID, isVisible, sleep } from "./helpers";
 
 suite("renderer", () => {
   test("renders valid TeX to a sized SVG data URI", () => {

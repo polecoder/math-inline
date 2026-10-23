@@ -56,6 +56,17 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * @brief Indica si una línea está dentro de las zonas visibles del editor (no plegada ni fuera de pantalla).
+ *
+ * @param editor Editor consultado.
+ * @param line Número de línea.
+ * @return `true` si alguna zona visible contiene la línea.
+ */
+export function isVisible(editor: vscode.TextEditor, line: number): boolean {
+	return editor.visibleRanges.some(r => r.start.line <= line && line <= r.end.line);
+}
+
+/**
  * @brief Cambia un valor de configuración global y espera a que VS Code notifique el cambio.
  *
  * Como el listener del test se registra después que el de la extensión, cuando

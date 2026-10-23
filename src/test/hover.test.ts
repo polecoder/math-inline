@@ -20,16 +20,26 @@ function decodeWrapper(markdown: vscode.MarkdownString): string {
 	return Buffer.from(match[1], 'base64').toString();
 }
 
+/**
+ * @brief Decodifica el SVG de una fórmula y le agrega el desplazamiento con que `previewMarkdown` lo anida.
+ *
+ * @param uri URI `data:` en base64 de la fórmula, tal como la devuelve `render`.
+ * @return Texto con el que el `<svg>` de la fórmula debe aparecer dentro del SVG envoltorio.
+ */
+function nestedFormula(uri: string): string {
+	return Buffer.from(uri.slice(uri.indexOf(',') + 1), 'base64').toString().replace(/^<svg/, `<svg x="${GUTTER}"`);
+}
+
 suite('previewMarkdown', () => {
 	const options = { color: '#123456', exPx: 7 };
 
-	test('wraps the image in an SVG with a transparent left gutter for the copy button', () => {
+	test('nests the formula SVG in a wrapper with a transparent left gutter for the copy button', () => {
 		const preview = previewMarkdown('x', options)!;
 		const inner = render('x', { ...options, display: true });
 		assert.ok(!isError(inner));
 		const svg = decodeWrapper(preview);
-		assert.ok(svg.startsWith(`<svg xmlns="http://www.w3.org/2000/svg" width="${inner.width + GUTTER}" height="${inner.height}">`));
-		assert.ok(svg.includes(`<image href="${inner.uri}" x="${GUTTER}" width="${inner.width}" height="${inner.height}"/>`));
+		assert.strictEqual(svg, `<svg xmlns="http://www.w3.org/2000/svg" width="${inner.width + GUTTER}" height="${inner.height}">${nestedFormula(inner.uri)}</svg>`);
+		assert.ok(!svg.includes('<image'), 'the formula is not base64-encoded twice');
 	});
 
 	test('renders in display mode even if the caller asks for inline', () => {
@@ -66,7 +76,7 @@ suite('MathHoverProvider', () => {
 		const expected = render('e^{i\\pi}+1=0', { ...api.decorator.renderOptions(HOVER_SCALE), display: true });
 		assert.ok(!isError(expected));
 		const content = hover.contents[0] as vscode.MarkdownString;
-		assert.ok(decodeWrapper(content).includes(`<image href="${expected.uri}"`));
+		assert.ok(decodeWrapper(content).includes(nestedFormula(expected.uri)));
 	});
 
 	test('is also active on the last character of the formula but not just past it', () => {

@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { MathDecorator } from '../decorator';
 import type { MathInlineApi } from '../extension';
+import type { MathSpan } from '../parser';
 import { BIG_TEX, activateExtension, openEditor, setGlobalConfig, sleep, waitFor } from './helpers';
 
 /** @brief Espera con la que se afirma que NO se abrió un hover (mayor que el retardo de la extensión, 300 ms). */
@@ -19,6 +20,16 @@ const NO_UPDATE_WAIT_MS = 400;
  */
 function range(line: number, start: number, end: number): vscode.Range {
 	return new vscode.Range(line, start, line, end);
+}
+
+/**
+ * @brief Crea una fórmula inline (`$...$`) con el TeX indicado, como la devolvería el parser.
+ *
+ * @param tex Fuente TeX de la fórmula.
+ * @return Fórmula que empieza en el offset 0 del documento.
+ */
+function inlineSpan(tex: string): MathSpan {
+	return { start: 0, end: tex.length + 2, tex };
 }
 
 /**
@@ -56,6 +67,7 @@ suite('MathDecorator behavior', () => {
 				collapsed: [],
 				errors: [],
 				revealed: [],
+				unfolded: [],
 			});
 		});
 
@@ -120,7 +132,7 @@ suite('MathDecorator behavior', () => {
 		test('leaves an empty document without decorations', async () => {
 			const editor = await openEditor('');
 			api.decorator.update(editor);
-			assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [] });
+			assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [], unfolded: [] });
 		});
 	});
 
@@ -131,7 +143,7 @@ suite('MathDecorator behavior', () => {
 			try {
 				await setGlobalConfig('mathInline', 'enabled', false);
 				api.decorator.update(editor);
-				assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [] });
+				assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [], unfolded: [] });
 			} finally {
 				await setGlobalConfig('mathInline', 'enabled', undefined);
 			}
@@ -192,12 +204,12 @@ suite('MathDecorator behavior', () => {
 
 	suite('isLarge', () => {
 		test('is true only for formulas that need shrinking below the inline limit', () => {
-			assert.strictEqual(api.decorator.isLarge(BIG_TEX), true);
-			assert.strictEqual(api.decorator.isLarge('x^2'), false);
+			assert.strictEqual(api.decorator.isLarge(inlineSpan(BIG_TEX)), true);
+			assert.strictEqual(api.decorator.isLarge(inlineSpan('x^2')), false);
 		});
 
 		test('is false for formulas with TeX errors', () => {
-			assert.strictEqual(api.decorator.isLarge(String.raw`\frac{a`), false);
+			assert.strictEqual(api.decorator.isLarge(inlineSpan(String.raw`\frac{a`)), false);
 		});
 	});
 
