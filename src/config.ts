@@ -13,12 +13,14 @@ export interface MathInlineConfig {
 	scale: number;
 	/** Color de las fórmulas; cadena vacía para usar el color por defecto del tema (`mathInline.color`). */
 	color: string;
+	/** Indica si los bloques `$$` multilínea se pliegan automáticamente (`mathInline.foldDisplayMath`). */
+	foldDisplayMath: boolean;
 }
 
 /**
  * @brief Lee la configuración `mathInline.*` del usuario.
  *
- * Aplica los valores por defecto (`enabled` verdadero, `scale` 1, `color` vacío)
+ * Aplica los valores por defecto (`enabled` verdadero, `scale` 1, `color` vacío, `foldDisplayMath` verdadero)
  * y recorta los espacios de `color`.
  *
  * @return Configuración vigente de la extensión.
@@ -29,6 +31,7 @@ export function getConfig(): MathInlineConfig {
 		enabled: cfg.get<boolean>('enabled', true),
 		scale: cfg.get<number>('scale', 1),
 		color: cfg.get<string>('color', '').trim(),
+		foldDisplayMath: cfg.get<boolean>('foldDisplayMath', true),
 	};
 }
 
