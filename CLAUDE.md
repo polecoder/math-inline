@@ -1,9 +1,19 @@
 # Math Inline
 
-Extensión de VS Code que renderiza matemática inline `$...$` en editores Markdown. Código en `src/`, tests con `npm test`.
+Extensión de VS Code que renderiza matemática inline `$...$` en editores Markdown. Código en `src/`, tests en `src/test/` (`npm test`; con cobertura, `npm run test:coverage`).
 
 ## Comentarios en el código
 
 Los comentarios de funciones, clases, interfaces y constantes importantes son estilo Doxygen y en español. Los mantiene el subagente **Comentarios** (`.claude/agents/comentarios.md`).
 
-Cada vez que implementes o modifiques funcionalidad, antes de dar el trabajo por terminado (y antes de hacer commit), invocá al subagente Comentarios indicándole los archivos y símbolos que cambiaron. Revisá lo que cambió y corré `npm run check-types` y `npm run lint` después.
+## Tests
+
+Los tests y su cobertura los mantiene el subagente **Tests** (`.claude/agents/tests.md`): mide la cobertura, busca el comportamiento sin proteger y escribe tests nuevos en `src/test/`. No modifica el código de producción; si encuentra bugs, los informa.
+
+## Al implementar o modificar funcionalidad
+
+Cada vez que implementes o modifiques funcionalidad, antes de dar el trabajo por terminado (y antes de hacer commit):
+
+1. Invocá al subagente **Tests** indicándole los archivos y símbolos que cambiaron. Si informa bugs, resolvelos (o consultalo con el usuario) antes de seguir.
+2. Invocá al subagente **Comentarios** indicándole los archivos y símbolos que cambiaron, incluidos los archivos de test que haya tocado el subagente Tests.
+3. Revisá lo que cambió y corré `npm test`, `npm run check-types` y `npm run lint`.
