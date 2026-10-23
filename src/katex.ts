@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import katex from 'katex';
-import type { MathDecorator } from './decorator';
+import { texPosition, type MathDecorator } from './decorator';
 import { isError, render } from './renderer';
 import { getConfig } from './config';
 import type { MathSpan } from './parser';
@@ -47,6 +47,8 @@ export class KatexDiagnostics implements vscode.Disposable {
 	 * @brief Revisa las fórmulas de un documento Markdown y publica sus diagnósticos.
 	 *
 	 * Si la extensión o `mathInline.katexWarnings` están desactivados, borra los diagnósticos del documento.
+	 * El rango de cada diagnóstico se ubica con `texPosition` (correcto también en documentos CRLF);
+	 * si KaTeX no informa una posición, abarca la fórmula entera.
 	 *
 	 * @param document Documento a revisar.
 	 */
@@ -65,13 +67,14 @@ export class KatexDiagnostics implements vscode.Disposable {
 			if (!problem || isError(render(span.tex, { ...this.decorator.renderOptions(), display: span.display }))) {
 				continue;
 			}
-			const delimiter = span.display ? 2 : 1;
-			const start = problem.position === undefined
-				? span.start
-				: span.start + delimiter + problem.position;
-			const end = problem.position === undefined ? span.end : Math.min(span.end - delimiter, start + Math.max(1, problem.length));
+			const range = problem.position === undefined
+				? new vscode.Range(document.positionAt(span.start), document.positionAt(span.end))
+				: new vscode.Range(
+					texPosition(document, span, problem.position),
+					texPosition(document, span, Math.min(span.tex.length, problem.position + Math.max(1, problem.length))),
+				);
 			const diagnostic = new vscode.Diagnostic(
-				new vscode.Range(document.positionAt(start), document.positionAt(end)),
+				range,
 				`VS Code's Markdown preview (KaTeX) cannot render this formula: ${problem.message}`,
 				vscode.DiagnosticSeverity.Warning,
 			);

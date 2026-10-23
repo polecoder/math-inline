@@ -14,7 +14,7 @@ Renders inline `$...$` math in Markdown files **directly in the editor**, not ju
   - A block that is a single table (`aligned`, `cases`, `array`, matrices, `gathered`, ...) with one row per line shows **each row rendered on its own line**, with the columns aligned as in the full formula. Fractions in tables use text style so rows fit the line height.
   - Put the cursor on a row to edit it: only that line shows its TeX, with a live preview of the row at the end of the line, while the rest of the block stays rendered. While the TeX is half-typed (say, an unclosed `\frac{`), the other rows keep their last good rendering and the edited line is underlined.
   - Any other block (a single integral, a long sum split across lines, ...) is cut into horizontal bands, one per line of the block.
-  - Blocks that would get too small, or that you fold by hand, are shown as a **∑ show formula** chip with the preview on hover (set `mathInline.displayMath` to `chip` to always use it).
+  - Blocks that would get too small to read, or that you fold by hand, show their plain TeX (with the preview on hover). Blocks left folded from an earlier session are unfolded when the document opens. Set `mathInline.displayMath` to `chip` to show every block as a **∑ show formula** chip instead.
 - Formulas that render here but that VS Code's Markdown preview (KaTeX) cannot render, like `\bbox`, get a warning in the Problems panel pointing at the unsupported command.
 
 Dollar signs follow Pandoc's rules, so `$5 and $10` is not math: the opening `$` must not be followed by a space, and the closing `$` must not be preceded by a space nor followed by a digit. Escaped dollars (`\$`), code spans and code blocks are ignored.

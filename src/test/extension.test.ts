@@ -300,7 +300,9 @@ suite('MathDecorator', () => {
 	let api: MathInlineApi;
 	let editor: vscode.TextEditor;
 
-	suiteSetup(async () => {
+	suiteSetup(async function () {
+		// The first activation loads MathJax and can take longer than Mocha's default 2 s.
+		this.timeout(10000);
 		api = await vscode.extensions.getExtension<MathInlineApi>(EXTENSION_ID)!.activate();
 		const document = await vscode.workspace.openTextDocument({
 			language: 'markdown',
@@ -502,7 +504,7 @@ suite('Display math drawn in the editor', () => {
 		}
 	});
 
-	test('a block folded by hand shows the chip', async function () {
+	test('a block folded by hand shows its TeX instead of a chip', async function () {
 		this.timeout(5000);
 		editor.selection = new vscode.Selection(0, 0, 0, 0);
 		// Let VS Code recompute the folding regions after the previous edit.
@@ -511,9 +513,46 @@ suite('Display math drawn in the editor', () => {
 		await sleep(300);
 		api.decorator.update(editor);
 		const state = api.decorator.getState(editor)!;
-		assert.deepStrictEqual(state.collapsed.map(r => r.start.line), [1]);
+		assert.strictEqual(state.collapsed.length, 0);
+		assert.deepStrictEqual(state.unfolded.map(r => r.start.line), [1]);
 		assert.deepStrictEqual(state.blocks.map(r => r.start.line), [8]);
+		await sleep(700);
+		assert.ok(!isVisible(editor, 2), 'a fold made by hand is kept');
 		await vscode.commands.executeCommand('editor.unfold', { selectionLines: [1], levels: 1, direction: 'up' });
+	});
+
+	test('unfolds blocks left folded from before once, then draws them', async function () {
+		this.timeout(5000);
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		await vscode.commands.executeCommand('editor.fold', { selectionLines: [1], levels: 1, direction: 'up' });
+		await sleep(300);
+		// A configuration change starts over, like opening the document in a new session.
+		await vscode.workspace.getConfiguration('mathInline').update('scale', 1.01, vscode.ConfigurationTarget.Global);
+		try {
+			await sleep(900);
+			assert.ok(isVisible(editor, 2), 'the stale fold was undone');
+			api.decorator.update(editor);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.blocks.map(r => r.start.line), [1, 8]);
+		} finally {
+			await vscode.workspace.getConfiguration('mathInline').update('scale', undefined, vscode.ConfigurationTarget.Global);
+		}
+	});
+});
+
+suite('Display math rows in CRLF documents', () => {
+	test('places every row on its own line, not on the \\begin line', async () => {
+		const api = await vscode.extensions.getExtension<MathInlineApi>(EXTENSION_ID)!.activate();
+		const rows = ['&y\'-\\frac{2}{x}y=x^4\\\\', '&\\iff\\\\', '&C\'(x)=x^2\\\\', '&\\iff\\\\', '&\\int C\'(x)dx=\\int x^2dx\\\\', '&\\iff\\\\',
+			'&C(x)+k_1=\\frac{x^3}{3}+k_2\\\\', '&\\iff\\\\', '&C(x)=\\frac{x^3}{3}+K\\\\', '&\\iff\\\\', '&y_P=\\frac{x^5}{3}'];
+		const lines = ['Intro', '', '$$', '\\begin{aligned}', ...rows, '\\end{aligned}', '$$', ''];
+		const document = await vscode.workspace.openTextDocument({ language: 'markdown', content: lines.join('\r\n') });
+		const editor = await vscode.window.showTextDocument(document);
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		// Rows are on lines 4 to 14, one image each.
+		assert.deepStrictEqual(state.rows.map(r => r.start.line), rows.map((_, i) => 4 + i));
+		assert.ok(state.rows.every(r => document.lineAt(r.start.line).text.startsWith('&')));
 	});
 });
 

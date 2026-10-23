@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { findMath, isDisplayBlock, MathSpan } from './parser';
+import { findMath, isDisplayBlock, MathSpan, texLocation } from './parser';
 import { layoutRows } from './blockLayout';
 import {
 	isError, render, renderBands, RenderedBands, RenderedMath, RenderedRow, RenderError, RenderOptions, renderRows, RenderResult,
@@ -32,7 +32,7 @@ const HOVER_DELAY_MS = 300;
  * o tras editarlo); plegar antes no tendría efecto.
  */
 const FOLD_DELAY_MS = 500;
-/** @brief Achique mínimo aceptable para un bloque `$$` cortado en franjas; si necesita más, se muestra como chip. */
+/** @brief Achique mínimo aceptable para un bloque `$$` cortado en franjas; si necesita más, no se dibuja en el editor. */
 const MIN_BAND_SCALE = 0.5;
 /** @brief Opacidad de las líneas delimitadoras (`$$`, `\begin`, `\end`) de un bloque mientras se edita. */
 const FADED_OPACITY = '0.45';
@@ -40,9 +40,10 @@ const FADED_OPACITY = '0.45';
 /**
  * @brief Forma en que se dibuja un bloque `$$` multilínea en sus propias líneas.
  *
- * `rows`: una tabla con una imagen por fila, en la línea donde empieza cada fila.
+ * `rows`: una tabla con una imagen por fila; `rowLines` tiene la línea del documento donde empieza cada fila.
  * `bands`: cualquier fórmula, cortada en franjas del alto de una línea.
- * `chip`: no entra con una escala aceptable y se muestra como chip.
+ * `chip`: no entra con una escala aceptable, o sea que no se puede dibujar en el editor. Con
+ * `displayMath` en `render` se muestra como código; en el modo `chip`, como chip.
  */
 type BlockView =
 	| { kind: 'rows'; rows: RenderedRow[]; rowLines: number[] }
@@ -67,6 +68,8 @@ interface PendingDecorations {
 	ghosts: vscode.DecorationOptions[];
 	/** Líneas delimitadoras atenuadas de un bloque en edición. */
 	faded: vscode.Range[];
+	/** Líneas que muestran la imagen de una fila. */
+	rows: vscode.Range[];
 	/** Bloques dibujados en el editor, marcados con un borde a la izquierda. */
 	blocks: vscode.Range[];
 	/** Fórmulas mostradas como chip. */
@@ -99,6 +102,8 @@ export interface EditorMathState {
 	blocks: vscode.Range[];
 	/** Rangos de las líneas que muestran la vista previa de la fila en edición. */
 	ghosts: vscode.Range[];
+	/** Rangos de las líneas que muestran la imagen de una fila de un bloque dibujado por filas. */
+	rows: vscode.Range[];
 }
 
 /** @brief Fórmulas parseadas de un documento, asociadas a la versión que se analizó. */
@@ -116,11 +121,13 @@ interface ParsedDocument {
  * con error se subrayan y las que tocan una selección se dejan como texto para poder editarlas.
  * Los bloques `$$` multilínea se dibujan por defecto en sus propias líneas (`mathInline.displayMath`
  * en `render`): una imagen por fila si son una tabla, o franjas del alto de una línea si no; al
- * editarlos se revelan las líneas tocadas y se muestra la vista previa de la fila. Solo se
- * muestran como chip en su primera línea si se pliegan a mano, si no entran con una escala
- * aceptable o con `displayMath` en `chip`; desplegados en ese modo se ven como código. En el modo
- * `chip`, si `mathInline.foldDisplayMath` está activo, se pliegan y despliegan automáticamente
- * (con `MathFoldingProvider` aportando las regiones).
+ * editarlos se revelan las líneas tocadas y se muestra la vista previa de la fila. En el modo
+ * `render` no hay chip: un bloque que no se puede dibujar (plegado a mano, demasiado chico o con
+ * error) se muestra como código y nunca se pliega automáticamente. Como VS Code recuerda los
+ * plegados entre sesiones, los que quedaron de antes se despliegan una vez por documento. Solo en
+ * el modo `chip` los bloques se muestran como chip en su primera línea y, si
+ * `mathInline.foldDisplayMath` está activo, se pliegan y despliegan automáticamente (con
+ * `MathFoldingProvider` aportando las regiones); desplegados se ven como código.
  * Las fórmulas que habría que achicar por debajo de `MIN_INLINE_SCALE` se muestran como un
  * chip `CHIP_TEXT`. El chip no lleva `hoverMessage`: la vista previa ampliada la aporta
  * `MathHoverProvider`, y al poner el cursor dentro de una de ellas se abre su hover automáticamente.
@@ -187,6 +194,10 @@ export class MathDecorator implements vscode.Disposable {
 	private lastHoverKey: string | undefined;
 	private foldTimer: ReturnType<typeof setTimeout> | undefined;
 	private lastFoldKey: string | undefined;
+	/** Documentos cuyos bloques plegados de antes ya se desplegaron (ver `unfoldStaleFolds`). */
+	private readonly staleFoldsCleared = new Set<string>();
+	/** Temporizadores pendientes de `unfoldStaleFolds`, para cancelarlos en `dispose`. */
+	private readonly staleTimers = new Set<ReturnType<typeof setTimeout>>();
 
 	/**
 	 * @brief Crea los tipos de decoración, suscribe los eventos relevantes y hace una primera actualización.
@@ -196,7 +207,9 @@ export class MathDecorator implements vscode.Disposable {
 	 * alcanzan al editor activo y hay que actualizarlo cuando recibe el foco. Con
 	 * `onDidChangeTextEditorVisibleRanges` (plegado, desplegado o scroll) actualiza el editor
 	 * solo si cambió `foldSignature`, porque el chip depende del estado de plegado. Al cerrar un
-	 * documento descarta sus fórmulas parseadas y sus entradas de `lastGood`.
+	 * documento descarta sus fórmulas parseadas y sus entradas de `lastGood`. Ante un cambio de
+	 * configuración relee `getConfig()`, vacía `staleFoldsCleared` (para volver a desplegar los
+	 * plegados de antes, ver `unfoldStaleFolds`) y actualiza todos los editores.
 	 */
 	constructor() {
 		this.disposables.push(
@@ -221,6 +234,8 @@ export class MathDecorator implements vscode.Disposable {
 			vscode.workspace.onDidCloseTextDocument(doc => {
 				const uri = doc.uri.toString();
 				this.parsed.delete(uri);
+				// Reopening restores the saved folds, so they must be undone again.
+				this.staleFoldsCleared.delete(uri);
 				for (const key of [...this.lastGood.keys()].filter(k => k.startsWith(`${uri}#`))) {
 					this.lastGood.delete(key);
 				}
@@ -230,6 +245,7 @@ export class MathDecorator implements vscode.Disposable {
 				if (e.affectsConfiguration('mathInline') || e.affectsConfiguration('editor.fontSize')
 					|| e.affectsConfiguration('editor.lineHeight')) {
 					this.config = getConfig();
+					this.staleFoldsCleared.clear();
 					this.updateAll();
 				}
 			}),
@@ -332,8 +348,10 @@ export class MathDecorator implements vscode.Disposable {
 	 *
 	 * Si `layoutRows` encuentra una tabla con una fila por línea y `renderRows` da la misma
 	 * cantidad de filas, se dibuja por filas (en estilo texto, con el alto de línea como máximo).
+	 * Las líneas de cada fila se ubican con `texPosition`, para no correrse en documentos CRLF.
 	 * Si no, se corta en franjas sobre todas las líneas del bloque, salvo que haya que achicarlo
-	 * por debajo de `MIN_BAND_SCALE`, en cuyo caso queda como chip.
+	 * por debajo de `MIN_BAND_SCALE`: entonces devuelve `chip`, que significa que no se puede
+	 * dibujar (con `displayMath` en `render`, el bloque se muestra como código).
 	 *
 	 * @param document Documento del bloque.
 	 * @param span Bloque `$$` multilínea.
@@ -347,9 +365,7 @@ export class MathDecorator implements vscode.Disposable {
 				return rows;
 			}
 			if (rows?.length === offsets.length) {
-				// The TeX starts right after the opening `$$`.
-				const rowLines = offsets.map(offset => document.positionAt(span.start + 2 + offset).line);
-				return { kind: 'rows', rows, rowLines };
+				return { kind: 'rows', rows, rowLines: offsets.map(offset => texPosition(document, span, offset).line) };
 			}
 		}
 		const lines = document.positionAt(span.end).line - document.positionAt(span.start).line + 1;
@@ -387,13 +403,17 @@ export class MathDecorator implements vscode.Disposable {
 	 * a `MIN_INLINE_SCALE` quedan como chip (`collapsed`) y el resto se reemplaza por su
 	 * imagen. Los `$$...$$` de una sola línea se renderizan en modo display. Los bloques
 	 * multilínea, con `displayMath` en `render`, se dibujan primero con `drawBlock` (que los
-	 * acumula en `blocks`, `ghosts` y las líneas ocultas); si este devuelve `false` siguen el camino
-	 * de siempre: son chip solo si están plegados (ver `isFolded`), y su decoración cubre solo la
-	 * primera línea (el resto lo oculta el plegado). Los no plegados no llevan chip: van a
-	 * `unfolded` y se muestran como código, aunque se siguen incluyendo en las líneas a plegar.
-	 * Los que tienen error o están revelados se despliegan. Todo se acumula en `PendingDecorations`
-	 * y se aplica al final con `hiddenType`, `ghostType`, `fadedType` y `blockType`; el estado
-	 * guardado incluye `blocks` y `ghosts`. Al final guarda la firma de plegado
+	 * acumula en `blocks`, `rows`, `ghosts` y las líneas ocultas); si este devuelve `false`, el
+	 * bloque no se pudo dibujar (plegado a mano, demasiado chico, con error) y en este modo se
+	 * muestra como código (`unfolded`): nunca como chip ni se pliega automáticamente.
+	 * En el modo `chip` los bloques son chip solo si están plegados (ver `isFolded`), y su
+	 * decoración cubre solo la primera línea (el resto lo oculta el plegado). Los no plegados no
+	 * llevan chip: van a `unfolded` y se muestran como código, aunque se siguen incluyendo en las
+	 * líneas a plegar. Los que tienen error o están revelados se despliegan. Todo se acumula en
+	 * `PendingDecorations` y se aplica al final con `hiddenType`, `ghostType`, `fadedType` y
+	 * `blockType`; el estado guardado incluye `blocks`, `ghosts` y `rows`. Con la extensión
+	 * habilitada en modo `render`, junta las líneas de apertura de todos los bloques y llama a
+	 * `unfoldStaleFolds` para desplegar los plegados de sesiones anteriores. Guarda la firma de plegado
 	 * (`foldSignature`) para que el listener de `visibleRanges` detecte cambios.
 	 * En los chips, `collapsedType` se aplica solo al `$` de apertura y el resto del
 	 * código se oculta con `chipSourceType`; no llevan `hoverMessage`, porque el mouse sobre el chip
@@ -412,11 +432,13 @@ export class MathDecorator implements vscode.Disposable {
 			return;
 		}
 		const out: PendingDecorations = {
-			hidden: [], blockLines: [], chips: [], chipSources: [], errors: [], ghosts: [], faded: [], blocks: [],
+			hidden: [], blockLines: [], rows: [], chips: [], chipSources: [], errors: [], ghosts: [], faded: [], blocks: [],
 			collapsed: [], revealed: [], unfolded: [], foldLines: [], unfoldLines: [],
 		};
 		const { hidden, collapsed, chips, chipSources, errors, revealed, unfolded, foldLines, unfoldLines } = out;
 
+		const renderMode = this.config.displayMath === 'render';
+		const blockStarts: number[] = [];
 		let blockIndex = 0;
 		for (const span of this.getSpans(editor.document)) {
 			const range = new vscode.Range(editor.document.positionAt(span.start), editor.document.positionAt(span.end));
@@ -427,8 +449,10 @@ export class MathDecorator implements vscode.Disposable {
 				}
 				continue;
 			}
-			if (block && this.config.displayMath === 'render'
-				&& this.drawBlock(editor, span, range, `${editor.document.uri.toString()}#${blockIndex++}`, out)) {
+			if (block) {
+				blockStarts.push(range.start.line);
+			}
+			if (block && renderMode && this.drawBlock(editor, span, range, `${editor.document.uri.toString()}#${blockIndex++}`, out)) {
 				continue;
 			}
 			if (editor.selections.some(sel => sel.start.isBeforeOrEqual(range.end) && sel.end.isAfterOrEqual(range.start))) {
@@ -444,10 +468,13 @@ export class MathDecorator implements vscode.Disposable {
 				if (block) {
 					unfoldLines.push(range.start.line);
 				}
-			} else if (block && !this.isFolded(editor, range.start.line)) {
+			} else if (block && (renderMode || !this.isFolded(editor, range.start.line))) {
 				// Unfolded (by hand, or not folded yet): a chip over the visible TeX would only get in the way.
+				// When blocks are drawn in the editor, one that cannot be drawn shows its TeX rather than a chip.
 				unfolded.push(range);
-				foldLines.push(range.start.line);
+				if (!renderMode) {
+					foldLines.push(range.start.line);
+				}
 			} else if (block || result.fit < MIN_INLINE_SCALE) {
 				// The preview comes from MathHoverProvider, since the opening `$` stays as hoverable text under the chip.
 				collapsed.push(range);
@@ -472,13 +499,47 @@ export class MathDecorator implements vscode.Disposable {
 		editor.setDecorations(this.blockType, out.blocks);
 		this.states.set(editor, {
 			rendered: hidden.map(d => d.range), collapsed, errors: errors.map(d => d.range),
-			revealed, unfolded, blocks: out.blocks, ghosts: out.ghosts.map(d => d.range),
+			revealed, unfolded, blocks: out.blocks, ghosts: out.ghosts.map(d => d.range), rows: out.rows,
 		});
 		this.foldSignatures.set(editor, this.foldSignature(editor));
 		this.scheduleHover(editor);
 		if (this.config.foldDisplayMath) {
 			this.syncFolds(editor, foldLines, unfoldLines);
 		}
+		if (renderMode && this.config.enabled) {
+			this.unfoldStaleFolds(editor, blockStarts);
+		}
+	}
+
+	/**
+	 * @brief Despliega una vez por documento los bloques `$$` que quedaron plegados de antes.
+	 *
+	 * VS Code recuerda el plegado de cada archivo entre sesiones, así que los bloques que se
+	 * plegaron en el modo `chip` volverían a abrirse plegados y no se dibujarían. Se hace una sola
+	 * vez por documento (y otra vez si cambia la configuración), para respetar después lo que el
+	 * usuario pliegue a mano. Espera `FOLD_DELAY_MS`, porque VS Code restaura el plegado guardado
+	 * cuando termina de calcular las regiones. Solo actúa sobre el editor activo; si al cumplirse la
+	 * espera ya no lo es, reintenta en la próxima actualización.
+	 *
+	 * @param editor Editor recién actualizado.
+	 * @param lines Líneas de apertura de los bloques del documento.
+	 */
+	private unfoldStaleFolds(editor: vscode.TextEditor, lines: number[]): void {
+		const uri = editor.document.uri.toString();
+		if (lines.length === 0 || editor !== vscode.window.activeTextEditor || this.staleFoldsCleared.has(uri)) {
+			return;
+		}
+		this.staleFoldsCleared.add(uri);
+		const timer = setTimeout(() => {
+			this.staleTimers.delete(timer);
+			if (editor === vscode.window.activeTextEditor) {
+				void vscode.commands.executeCommand('editor.unfold', { selectionLines: lines, levels: 1, direction: 'up' });
+			} else {
+				// Retry when the editor is active again.
+				this.staleFoldsCleared.delete(uri);
+			}
+		}, FOLD_DELAY_MS);
+		this.staleTimers.add(timer);
 	}
 
 	/**
@@ -499,8 +560,9 @@ export class MathDecorator implements vscode.Disposable {
 	 * @param range Rango del bloque en el documento.
 	 * @param key Clave del bloque en `lastGood`.
 	 * @param out Decoraciones en construcción.
-	 * @return `false` si el bloque debe seguir el camino de siempre: plegado a mano (chip), con
-	 * error fuera de edición, demasiado grande (`chip`) o en edición sin un render válido previo.
+	 * @return `false` si el bloque no se dibuja: plegado a mano, con error fuera de edición, demasiado
+	 * chico (`chip`) o en edición sin un render válido previo. En el modo `render` el llamador lo
+	 * muestra entonces como código, no como chip.
 	 */
 	private drawBlock(editor: vscode.TextEditor, span: MathSpan, range: vscode.Range, key: string, out: PendingDecorations): boolean {
 		const document = editor.document;
@@ -526,7 +588,7 @@ export class MathDecorator implements vscode.Disposable {
 				return false;
 			}
 			error = view.error;
-			view = { ...last, rowLines: offsets.map(offset => document.positionAt(span.start + 2 + offset).line) };
+			view = { ...last, rowLines: offsets.map(offset => texPosition(document, span, offset).line) };
 		} else if (view.kind === 'chip') {
 			return false;
 		} else {
@@ -558,6 +620,7 @@ export class MathDecorator implements vscode.Disposable {
 				}
 			} else if (row) {
 				out.blockLines.push({ range: lineRange, renderOptions: { before: { ...imageAttachment(row), margin: `0 0 0 ${row.offset}px` } } });
+				out.rows.push(lineRange);
 			} else if (touched.size > 0) {
 				out.faded.push(lineRange);
 			} else {
@@ -712,7 +775,7 @@ export class MathDecorator implements vscode.Disposable {
 	}
 
 	/**
-	 * @brief Cancela los temporizadores pendientes (incluidos los del hover y el plegado) y libera las decoraciones y suscripciones.
+	 * @brief Cancela los temporizadores pendientes (incluidos los del hover, el plegado y el desplegado de plegados viejos) y libera las decoraciones y suscripciones.
 	 */
 	dispose(): void {
 		for (const timer of this.timers.values()) {
@@ -720,8 +783,26 @@ export class MathDecorator implements vscode.Disposable {
 		}
 		clearTimeout(this.hoverTimer);
 		clearTimeout(this.foldTimer);
+		this.staleTimers.forEach(timer => clearTimeout(timer));
 		this.disposables.forEach(d => d.dispose());
 	}
+}
+
+/**
+ * @brief Convierte un offset del TeX de una fórmula en una posición del documento.
+ *
+ * Usa `texLocation`, que cuenta los saltos de línea del TeX, para no correrse en documentos CRLF.
+ * En la primera línea de la fórmula suma el ancho del delimitador de apertura (`$$` o `$`).
+ *
+ * @param document Documento de la fórmula.
+ * @param span Fórmula.
+ * @param offset Posición dentro de `span.tex`.
+ * @return Posición correspondiente en el documento.
+ */
+export function texPosition(document: vscode.TextDocument, span: MathSpan, offset: number): vscode.Position {
+	const start = document.positionAt(span.start);
+	const { line, column } = texLocation(span, offset);
+	return line === 0 ? start.translate(0, (span.display ? 2 : 1) + column) : new vscode.Position(start.line + line, column);
 }
 
 /**

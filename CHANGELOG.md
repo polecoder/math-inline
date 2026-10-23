@@ -7,7 +7,7 @@ All notable changes to the "math-inline" extension are documented in this file, 
 ### Added
 
 - Display math. `$$...$$` on a single line is rendered in display style (or as a chip when too tall). Multi-line `$$` blocks fold into a **∑ show formula** chip with a display-mode preview on hover, and unfold while the cursor is inside them.
-- Multi-line `$$` blocks are drawn in the editor: tables (`aligned`, `cases`, matrices, ...) one row per line with aligned columns, other formulas cut into line-high bands. Editing a row reveals only that line and previews the row at its end; while the TeX is broken the other rows keep their last good rendering. Setting `mathInline.displayMath` (`render` or `chip`).
+- Multi-line `$$` blocks are drawn in the editor: tables (`aligned`, `cases`, matrices, ...) one row per line with aligned columns, other formulas cut into line-high bands. Editing a row reveals only that line and previews the row at its end; while the TeX is broken the other rows keep their last good rendering. Setting `mathInline.displayMath` (`render` or `chip`). In `render` mode, a block that cannot be drawn or is folded by hand shows its TeX, never a chip, and blocks left folded from an earlier session are unfolded once.
 - Warnings in the Problems panel for formulas that VS Code's Markdown preview (KaTeX) cannot render. Setting `mathInline.katexWarnings`.
 - Setting `mathInline.foldDisplayMath` to turn off the automatic folding of `$$` blocks shown as a chip.
 
