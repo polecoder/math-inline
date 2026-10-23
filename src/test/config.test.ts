@@ -30,6 +30,7 @@ suite("config", () => {
         enabled: true,
         scale: 1,
         color: "",
+        foldDisplayMath: true,
       });
     });
 
@@ -52,6 +53,7 @@ suite("config", () => {
           enabled: false,
           scale: 1,
           color: "#ffcc00",
+          foldDisplayMath: true,
         });
       } finally {
         await setGlobalConfig("mathInline", "color", undefined);
