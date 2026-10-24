@@ -16,6 +16,10 @@ Las vulnerabilidades de las dependencias las revisa el subagente **Vulnerabilida
 
 Cada vez que se modifique `package.json` (agregar, quitar o actualizar dependencias o `overrides`), invocá al subagente **Vulnerabilidades** antes de dar el trabajo por terminado (y antes de hacer commit), indicándole qué cambió. Si informa cambios que requieren tocar código o vulnerabilidades sin corrección, resolvelos o consultalo con el usuario.
 
+## Documentación
+
+La documentación la mantiene el subagente **Publisher** (`.claude/agents/publisher.md`): `README.md` (página del Marketplace, en inglés), `CHANGELOG.md` (Keep a Changelog, en inglés, con lo nuevo en `[Unreleased]`), `ISSUES.md` (problemas y pendientes, en español) y los textos visibles de `package.json` (descripciones de settings y comandos). Verifica contra el código lo que documenta. No modifica el código ni las dependencias; si encuentra diferencias entre el código y la documentación que parecen bugs, o propone subir la versión, lo informa.
+
 ## Al implementar o modificar funcionalidad
 
 Cada vez que implementes o modifiques funcionalidad, antes de dar el trabajo por terminado (y antes de hacer commit):
@@ -23,4 +27,5 @@ Cada vez que implementes o modifiques funcionalidad, antes de dar el trabajo por
 1. Si cambió `package.json`, invocá al subagente **Vulnerabilidades** indicándole qué dependencias cambiaron.
 2. Invocá al subagente **Tests** indicándole los archivos y símbolos que cambiaron. Si informa bugs, resolvelos (o consultalo con el usuario) antes de seguir.
 3. Invocá al subagente **Comentarios** indicándole los archivos y símbolos que cambiaron, incluidos los archivos de test que haya tocado el subagente Tests.
-4. Revisá lo que cambió y corré `npm test`, `npm run check-types` y `npm run lint`.
+4. Invocá al subagente **Publisher** indicándole qué cambió (funcionalidad, settings, comandos, bugs corregidos, problemas de `ISSUES.md` resueltos y limitaciones o pendientes que quedaron), incluidos los bugs que haya informado el subagente Tests. Si informa inconsistencias con el código o decisiones pendientes (como subir la versión), resolvelas o consultalo con el usuario.
+5. Revisá lo que cambió y corré `npm test`, `npm run check-types` y `npm run lint`.
