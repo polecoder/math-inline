@@ -5,32 +5,7 @@ import { texPosition } from '../decorator';
 import { isError, render, renderBands, renderRows } from '../renderer';
 import { previewMarkdown } from '../hover';
 import { katexProblem } from '../katex';
-
-/** @brief Identificador de la extensión (`publisher.name`) usado para activarla en los tests. */
-const EXTENSION_ID = 'polecoder.math-inline';
-/** @brief Fórmula demasiado alta para mostrarse inline. */
-const BIG_TEX = String.raw`\left[\overline{X}_n\pm\dfrac{\sqrt{\overline{X}_n(1-\overline{X}_n)}\,z_{\alpha/2}}{\sqrt n}\right]`;
-
-/**
- * @brief Espera la cantidad de milisegundos indicada.
- *
- * @param ms Milisegundos a esperar.
- * @return Promesa que se resuelve pasado ese tiempo.
- */
-function sleep(ms: number): Promise<void> {
-	return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * @brief Indica si una línea está dentro de las zonas visibles del editor (no plegada ni fuera de pantalla).
- *
- * @param editor Editor consultado.
- * @param line Número de línea.
- * @return `true` si alguna zona visible contiene la línea.
- */
-function isVisible(editor: vscode.TextEditor, line: number): boolean {
-	return editor.visibleRanges.some(r => r.start.line <= line && line <= r.end.line);
-}
+import { BIG_TEX, EXTENSION_ID, isVisible, openEditor, sleep } from './helpers';
 
 /**
  * @brief Espera, consultando cada pocos milisegundos, a que se cumpla una condición.
@@ -47,18 +22,6 @@ async function until(condition: () => boolean, timeoutMs = 4000): Promise<void> 
 		}
 		await sleep(20);
 	}
-}
-
-/**
- * @brief Abre un documento nuevo en un editor.
- *
- * @param content Contenido del documento.
- * @param language Lenguaje del documento (`markdown` por defecto).
- * @return Editor mostrando el documento.
- */
-async function openEditor(content: string, language = 'markdown'): Promise<vscode.TextEditor> {
-	const document = await vscode.workspace.openTextDocument({ language, content });
-	return vscode.window.showTextDocument(document);
 }
 
 /**
@@ -119,6 +82,96 @@ suite('renderer', () => {
 		const fitted = render(String.raw`\dfrac{\sqrt{a}}{b}`, { color: '#000', exPx: 7, maxHeight: 10 });
 		assert.ok(!isError(fitted));
 		assert.ok(fitted.fit > 0 && fitted.fit < 1);
+	});
+
+	test('textStyle rewrites \\dbinom but leaves longer control sequences alone', () => {
+		const opts = { color: '#000', exPx: 7 };
+		assert.deepStrictEqual(render(String.raw`\dbinom{n}{k}`, { ...opts, textStyle: true }), render(String.raw`\binom{n}{k}`, opts));
+		const longer = render(String.raw`\dfracx`, { ...opts, textStyle: true });
+		assert.ok(isError(longer));
+		assert.match(longer.error, /undefined control sequence/i);
+	});
+
+	test('display mode makes limits taller than inline mode', () => {
+		const tex = String.raw`\sum_{i=1}^{n} i`;
+		const inline = render(tex, { color: '#000', exPx: 7 });
+		const display = render(tex, { color: '#000', exPx: 7, display: true });
+		assert.ok(!isError(inline) && !isError(display));
+		assert.ok(display.height > inline.height);
+	});
+
+	test('scales the size with exPx', () => {
+		const small = render('x', { color: '#000', exPx: 7 });
+		const big = render('x', { color: '#000', exPx: 14 });
+		assert.ok(!isError(small) && !isError(big));
+		assert.ok(Math.abs(big.width - small.width * 2) < 0.05);
+		assert.ok(Math.abs(big.height - small.height * 2) < 0.05);
+	});
+
+	test('scales verticalAlign along with the shrink', () => {
+		const tex = String.raw`\left[\dfrac{\sqrt{a}}{b}\right]`;
+		const full = render(tex, { color: '#000', exPx: 7 });
+		const fitted = render(tex, { color: '#000', exPx: 7, maxHeight: 10 });
+		assert.ok(!isError(full) && !isError(fitted));
+		assert.ok(full.verticalAlign < 0);
+		assert.ok(Math.abs(fitted.verticalAlign - full.verticalAlign * fitted.fit) < 0.02);
+		assert.ok(Math.abs(fitted.width - full.width * fitted.fit) < 0.02);
+	});
+
+	test('does not shrink a formula whose height equals maxHeight', () => {
+		const full = render('x', { color: '#000', exPx: 7 });
+		assert.ok(!isError(full));
+		assert.deepStrictEqual(render('x', { color: '#000', exPx: 7, maxHeight: full.height }), full);
+	});
+
+	test('escapes XML special characters in the color', () => {
+		const result = render('x', { color: 'a"<&>\'b', exPx: 7 });
+		assert.ok(!isError(result));
+		const svg = Buffer.from(result.uri.split(',')[1], 'base64').toString();
+		assert.ok(svg.includes('a&#34;&#60;&#38;&#62;&#39;b'));
+	});
+
+	test('rewrites the root <svg> with pixel dimensions and no style', () => {
+		const result = render(String.raw`\frac{a}{b}`, { color: '#000', exPx: 7 });
+		assert.ok(!isError(result));
+		const svg = Buffer.from(result.uri.split(',')[1], 'base64').toString();
+		const root = /^<svg[^>]*>/.exec(svg)![0];
+		assert.ok(root.includes(` width="${result.width}"`));
+		assert.ok(root.includes(` height="${result.height}"`));
+		assert.ok(!root.includes('style='));
+	});
+
+	test('returns the same result for repeated renders and keeps colors apart', () => {
+		const a = render('q+1', { color: '#111111', exPx: 7 });
+		assert.strictEqual(render('q+1', { color: '#111111', exPx: 7 }), a);
+		const b = render('q+1', { color: '#222222', exPx: 7 });
+		assert.notStrictEqual(b, a);
+		assert.ok(!isError(a) && !isError(b));
+		assert.notStrictEqual(a.uri, b.uri);
+	});
+
+	test('evicts the oldest cached entry once the cache is full', () => {
+		const opts = { color: '#000', exPx: 7.25 };
+		const first = render('evict0', opts);
+		assert.strictEqual(render('evict0', opts), first);
+		for (let i = 1; i <= 500; i++) {
+			render(`evict${i}`, opts);
+		}
+		const again = render('evict0', opts);
+		assert.notStrictEqual(again, first);
+		assert.deepStrictEqual(again, first);
+	});
+
+	test('renders empty TeX without throwing', () => {
+		const result = render('', { color: '#000', exPx: 7 });
+		assert.ok(!isError(result));
+		assert.strictEqual(result.fit, 1);
+	});
+
+	test('rejects packages that would hide errors or load code', () => {
+		for (const tex of [String.raw`\require{amsmath}`, String.raw`\undefinedmacro`]) {
+			assert.ok(isError(render(tex, { color: '#000', exPx: 7 })), tex);
+		}
 	});
 
 	test('renders each row of a table as its own image', () => {

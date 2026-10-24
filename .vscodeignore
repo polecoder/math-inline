@@ -1,5 +1,6 @@
 .vscode/**
 .vscode-test/**
+coverage/**
 .github/**
 src/**
 out/**
@@ -19,3 +20,4 @@ ISSUES.md
 CLAUDE.md
 *.vsix
 images/*.svg
+scripts/**
