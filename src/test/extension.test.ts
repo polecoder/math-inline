@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import type { MathInlineApi } from '../extension';
+import { texPosition } from '../decorator';
 import { isError, render, renderBands, renderRows } from '../renderer';
 import { previewMarkdown } from '../hover';
 import { katexProblem } from '../katex';
@@ -865,5 +866,185 @@ suite('KaTeX warnings: edge cases', () => {
 		assert.deepStrictEqual(api.katex.getDiagnostics(editor.document.uri), []);
 		await editor.edit(edit => edit.replace(new vscode.Range(0, 6, 0, 7), String.raw`\bbox{x}`));
 		await until(() => api.katex.getDiagnostics(editor.document.uri).length === 1);
+	});
+});
+
+suite('texPosition', () => {
+	let api: MathInlineApi;
+
+	suiteSetup(async () => {
+		api = await vscode.extensions.getExtension<MathInlineApi>(EXTENSION_ID)!.activate();
+	});
+
+	test('adds the width of the delimiter on the first line of an inline formula', async () => {
+		const document = (await openEditor('ab $x+y$\n')).document;
+		const span = api.decorator.getSpans(document)[0];
+		assert.deepStrictEqual(texPosition(document, span, 0), new vscode.Position(0, 4));
+		assert.deepStrictEqual(texPosition(document, span, 2), new vscode.Position(0, 6));
+	});
+
+	test('adds the width of $$ on the first line of a display formula, after any text before it', async () => {
+		const document = (await openEditor('Text $$x+\ny$$\n')).document;
+		const span = api.decorator.getSpans(document)[0];
+		assert.deepStrictEqual(texPosition(document, span, 0), new vscode.Position(0, 7));
+		assert.deepStrictEqual(texPosition(document, span, 2), new vscode.Position(0, 9));
+	});
+
+	for (const [name, eol] of [['LF', '\n'], ['CRLF', '\r\n']]) {
+		test(`maps TeX offsets on later lines to their own line and column in a ${name} document`, async () => {
+			const content = ['Text', '$$', '\\begin{aligned}', 'a&=1\\\\', 'b&=2', '\\end{aligned}', '$$', ''].join(eol);
+			const document = (await openEditor(content)).document;
+			const span = api.decorator.getSpans(document)[0];
+			assert.deepStrictEqual(texPosition(document, span, span.tex.indexOf('a&')), new vscode.Position(3, 0));
+			assert.deepStrictEqual(texPosition(document, span, span.tex.indexOf('&=2')), new vscode.Position(4, 1));
+			assert.deepStrictEqual(texPosition(document, span, span.tex.indexOf('\\end')), new vscode.Position(5, 0));
+		});
+	}
+});
+
+suite('Display math rows in CRLF documents: edge cases', () => {
+	let api: MathInlineApi;
+	/**
+	 * @brief Convierte los saltos de línea de un texto a CRLF.
+	 *
+	 * @param text Texto con saltos `\n`.
+	 * @return Texto con saltos `\r\n`.
+	 */
+	const crlf = (text: string) => text.replace(/\n/g, '\r\n');
+
+	suiteSetup(async () => {
+		api = await vscode.extensions.getExtension<MathInlineApi>(EXTENSION_ID)!.activate();
+	});
+
+	test('keeps the rows on their lines when the $$ has text before it', async () => {
+		const editor = await openEditor(crlf('Text $$\n\\begin{aligned}\na&=1\\\\\nb&=2\n\\end{aligned}\n$$ after\n'));
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		assert.deepStrictEqual(state.blocks, [new vscode.Range(0, 5, 5, 2)]);
+		assert.deepStrictEqual(state.rows.map(r => r.start.line), [2, 3]);
+	});
+
+	test('previews the edited row on its own line', async () => {
+		const editor = await openEditor(crlf(ALIGNED_BLOCK));
+		editor.selection = new vscode.Selection(4, 1, 4, 1);
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		assert.deepStrictEqual(state.ghosts, [new vscode.Range(4, 4, 4, 4)]);
+		assert.deepStrictEqual(state.rows.map(r => r.start.line), [2, 3]);
+	});
+
+	test('underlines the edited line when the TeX of a CRLF block breaks', async () => {
+		const editor = await openEditor(crlf(ALIGNED_BLOCK));
+		editor.selection = new vscode.Selection(3, 1, 3, 1);
+		api.decorator.update(editor);
+		assert.strictEqual(api.decorator.getState(editor)!.errors.length, 0);
+		await editor.edit(edit => edit.insert(new vscode.Position(3, 1), '\\frac{'));
+		editor.selection = new vscode.Selection(3, 1, 3, 1);
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		assert.deepStrictEqual(state.errors, [new vscode.Range(3, 0, 3, editor.document.lineAt(3).text.length)]);
+		assert.strictEqual(state.blocks.length, 1, 'the block stays drawn with the last good rows');
+		assert.deepStrictEqual(state.ghosts, []);
+	});
+
+	test('underlines the whole CRLF block when its TeX is broken and the cursor is elsewhere', async () => {
+		const editor = await openEditor(crlf('Intro\n\n$$\n\\begin{aligned}\na&=1\\\\\n\\frac{b\n\\end{aligned}\n$$\n'));
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		assert.deepStrictEqual(state.errors, [new vscode.Range(2, 0, 7, 2)]);
+		assert.deepStrictEqual([state.blocks, state.collapsed, state.unfolded], [[], [], []]);
+	});
+
+	test('places KaTeX warnings of a CRLF block exactly on the offending command', async () => {
+		const document = (await openEditor(crlf('A $x$\n$$\n\\begin{aligned}\na&=1\\\\\nb&=\\bbox{y}\n\\end{aligned}\n$$\n'))).document;
+		api.katex.check(document);
+		const diagnostics = api.katex.getDiagnostics(document.uri);
+		assert.strictEqual(diagnostics.length, 1);
+		assert.strictEqual(document.getText(diagnostics[0].range), '\\bbox');
+		assert.deepStrictEqual(diagnostics[0].range, new vscode.Range(4, 3, 4, 8));
+	});
+});
+
+suite('Display math that cannot be drawn is shown as code', () => {
+	let api: MathInlineApi;
+	/** @brief Bloque de tres líneas con una matriz de 20 filas en una sola línea de contenido: no entra en franjas sin achicarse a menos de la mitad. */
+	const tallBlock = `Intro\n\n$$\n\\begin{array}{c}${Array.from({ length: 20 }, (_, i) => i).join('\\\\')}\\end{array}\n$$\n`;
+
+	suiteSetup(async () => {
+		api = await vscode.extensions.getExtension<MathInlineApi>(EXTENSION_ID)!.activate();
+	});
+
+	test('a block too tall for its lines is unfolded, not a chip', async () => {
+		const editor = await openEditor(tallBlock);
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		assert.deepStrictEqual(state.unfolded, [new vscode.Range(2, 0, 4, 2)]);
+		assert.deepStrictEqual([state.collapsed, state.blocks, state.errors, state.revealed], [[], [], [], []]);
+	});
+
+	test('a block too tall for its lines is not folded afterwards', async function () {
+		this.timeout(10000);
+		const editor = await openEditor(tallBlock);
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		api.decorator.update(editor);
+		// Longer than the folding delay: a chip block would be folded by now.
+		await sleep(1200);
+		api.decorator.update(editor);
+		assert.ok(isVisible(editor, 3), 'the TeX stays visible');
+		assert.strictEqual(api.decorator.getState(editor)!.collapsed.length, 0);
+	});
+
+	test('a block folded by hand is shown as code and not as a chip', async function () {
+		this.timeout(10000);
+		const editor = await openEditor(`Intro\n\n${ALIGNED_BLOCK}After\nMore\n`);
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		await until(() => {
+			api.decorator.update(editor);
+			return api.decorator.getState(editor)!.blocks.length === 1;
+		});
+		// Wait for the one-time cleanup of stale folds (it would undo the fold), then fold the block by hand.
+		await sleep(900);
+		await vscode.commands.executeCommand('editor.fold', { selectionLines: [2], levels: 1, direction: 'up' });
+		await until(() => isVisible(editor, 2) && !isVisible(editor, 3));
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		assert.deepStrictEqual(state.unfolded, [new vscode.Range(2, 0, 8, 2)]);
+		assert.deepStrictEqual([state.collapsed, state.blocks, state.errors], [[], [], []]);
+		await vscode.commands.executeCommand('editor.unfold', { selectionLines: [2], levels: 1, direction: 'up' });
+	});
+
+	test('a block with invalid TeX is underlined, not a chip', async () => {
+		const editor = await openEditor('Intro\n\n$$\n\\frac{a\n$$\n');
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		assert.deepStrictEqual(state.errors, [new vscode.Range(2, 0, 4, 2)]);
+		assert.deepStrictEqual([state.collapsed, state.unfolded, state.blocks], [[], [], []]);
+	});
+});
+
+suite('Stale fold cleanup', () => {
+	let api: MathInlineApi;
+
+	suiteSetup(async () => {
+		api = await vscode.extensions.getExtension<MathInlineApi>(EXTENSION_ID)!.activate();
+	});
+
+	test('does not unfold the blocks folded as chips when displayMath is chip', async function () {
+		this.timeout(20000);
+		await withSetting('displayMath', 'chip', async () => {
+			const editor = await openEditor(`Intro\n\n${ALIGNED_BLOCK}After\nMore\n`);
+			await until(() => {
+				api.decorator.update(editor);
+				return isVisible(editor, 2) && !isVisible(editor, 3);
+			}, 8000);
+			await sleep(1200);
+			assert.ok(!isVisible(editor, 3), 'the chip block stays folded');
+			api.decorator.update(editor);
+			assert.strictEqual(api.decorator.getState(editor)!.collapsed.length, 1);
+		});
 	});
 });

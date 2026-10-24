@@ -519,7 +519,9 @@ export class MathDecorator implements vscode.Disposable {
 	 * vez por documento (y otra vez si cambia la configuración), para respetar después lo que el
 	 * usuario pliegue a mano. Espera `FOLD_DELAY_MS`, porque VS Code restaura el plegado guardado
 	 * cuando termina de calcular las regiones. Solo actúa sobre el editor activo; si al cumplirse la
-	 * espera ya no lo es, reintenta en la próxima actualización.
+	 * espera ya no lo es, reintenta en la próxima actualización. Si durante la espera la
+	 * configuración dejó de ser `displayMath = 'render'` o la extensión se deshabilitó, el
+	 * temporizador no hace nada (ni despliega ni reintenta).
 	 *
 	 * @param editor Editor recién actualizado.
 	 * @param lines Líneas de apertura de los bloques del documento.
@@ -532,6 +534,10 @@ export class MathDecorator implements vscode.Disposable {
 		this.staleFoldsCleared.add(uri);
 		const timer = setTimeout(() => {
 			this.staleTimers.delete(timer);
+			// The configuration may have changed while waiting (for instance, to chip mode).
+			if (this.config.displayMath !== 'render' || !this.config.enabled) {
+				return;
+			}
 			if (editor === vscode.window.activeTextEditor) {
 				void vscode.commands.executeCommand('editor.unfold', { selectionLines: lines, levels: 1, direction: 'up' });
 			} else {

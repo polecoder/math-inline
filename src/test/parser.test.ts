@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { findInlineMath, findMath, isDisplayBlock } from '../parser';
+import { findInlineMath, findMath, isDisplayBlock, texLocation } from '../parser';
 
 /**
  * @brief Extrae solo el TeX de cada fórmula inline encontrada.
@@ -106,5 +106,41 @@ suite('findMath', () => {
 
 	test('isDisplayBlock is false for inline and single-line display math', () => {
 		assert.deepStrictEqual(findMath('$a$ $$b$$').map(isDisplayBlock), [false, false]);
+	});
+});
+
+suite('texLocation', () => {
+	/** @brief Bloque de un documento CRLF cuyo TeX empieza con un salto de línea y no conserva los `\r`. */
+	const block = findMath('$$\r\n\\begin{aligned}\r\na&=1\\\\\r\nb\r\n\\end{aligned}\r\n$$')[0];
+
+	test('locates offsets of an inline formula on line 0, relative to its TeX', () => {
+		const span = findMath('a $xy$')[0];
+		assert.deepStrictEqual(texLocation(span, 0), { line: 0, column: 0 });
+		assert.deepStrictEqual(texLocation(span, 1), { line: 0, column: 1 });
+		assert.deepStrictEqual(texLocation(span, span.tex.length), { line: 0, column: 2 });
+	});
+
+	test('keeps line 0 for offsets up to the first line break, inclusive', () => {
+		const span = findMath('$$a\nb$$')[0];
+		assert.strictEqual(span.tex, 'a\nb');
+		assert.deepStrictEqual(texLocation(span, 1), { line: 0, column: 1 });
+	});
+
+	test('moves to the next line right after a line break', () => {
+		const span = findMath('$$a\nbc$$')[0];
+		assert.deepStrictEqual(texLocation(span, 2), { line: 1, column: 0 });
+		assert.deepStrictEqual(texLocation(span, 3), { line: 1, column: 1 });
+	});
+
+	test('places a TeX that starts with a line break at line 0 for offset 0 and line 1 right after', () => {
+		assert.strictEqual(block.tex[0], '\n');
+		assert.deepStrictEqual(texLocation(block, 0), { line: 0, column: 0 });
+		assert.deepStrictEqual(texLocation(block, 1), { line: 1, column: 0 });
+	});
+
+	test('counts lines without being shifted by the carriage returns of CRLF documents', () => {
+		assert.ok(!block.tex.includes('\r'));
+		assert.deepStrictEqual(texLocation(block, block.tex.indexOf('b\n')), { line: 3, column: 0 });
+		assert.deepStrictEqual(texLocation(block, block.tex.indexOf('=')), { line: 2, column: 2 });
 	});
 });
