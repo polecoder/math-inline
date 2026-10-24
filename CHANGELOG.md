@@ -15,6 +15,11 @@ All notable changes to the "math-inline" extension are documented in this file, 
 
 - Rendered formulas are much smaller (glyphs are defined once per image), so long formulas fit in VS Code's hover size limit instead of showing as text.
 - Tables inside inline formulas (like `$\begin{pmatrix}...\end{pmatrix}$`) use text style, so they fit the line more often.
+- The hover preview of a `$$` block opens from any line of the block. A preview too large for VS Code's hover limit shows a short notice.
+
+### Security
+
+- Updated `@xmldom/xmldom` (used by MathJax) to a patched version, and the `serialize-javascript`, `@azure/msal-node` and `diff` development dependencies, to fix known vulnerabilities.
 
 ## [0.2.0] - 2026-10-21
 

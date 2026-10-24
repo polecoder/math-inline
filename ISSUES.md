@@ -23,10 +23,12 @@ Una extensión no puede leer los colores del tema, así que `resolveColor` (`src
 
 ## Alcance pendiente
 
-### 5. Display math (`$$...$$`) no se renderiza
-El parser lo detecta solo para ignorarlo (ni el inline `$$x$$` ni el bloque multilínea). Para v0.2: al menos `$$...$$` en una sola línea como `displaystyle` inline; para bloques multilínea hay que decidir cómo ocultar las líneas intermedias (¿folding?).
-- **Resuelto:** `$$...$$` de una línea se renderiza en modo display (o como chip); los bloques multilínea se pliegan en un chip con vista previa en el hover y se despliegan con el cursor adentro. Pendiente: probar el render "rebanado" en franjas por línea para dibujar el bloque en el editor.
-- **Resuelto:** los bloques se dibujan en el editor, por filas (tablas con una fila por línea, recortadas de la tabla completa) o por franjas (el resto). Las filas se miden parcheando `SVGmtable.placeRows` de MathJax 3.2.2 (`src/renderer.ts`, `recordTableRows`): si se actualiza MathJax hay que verificar que siga funcionando (el modo por filas cae a franjas si las medidas no cierran con el `viewBox`).
+### 5. ~~Display math (`$$...$$`) no se renderiza~~
+Resuelto (aún sin publicar, va en `[Unreleased]`): 
+- `$$...$$` de una línea se renderiza en modo display (o como chip si no entra en la línea).
+- Los bloques multilínea se dibujan en el editor (`mathInline.displayMath` = `render`), por filas (tablas con una fila por línea, recortadas de la tabla completa) o por franjas del alto de una línea (el resto). Con `chip` se muestran como chip con vista previa en el hover, plegados si `mathInline.foldDisplayMath` está activo.
+- Las posiciones de las filas y de los diagnósticos de KaTeX se calculan bien en documentos con CRLF.
+- Limitaciones que quedan: ver los ítems 17 a 20.
 
 ### 6. Delimitadores `\(...\)` y `\[...\]` no soportados.
 
@@ -40,6 +42,20 @@ El `$$` del medio se interpreta como apertura de display math. Pandoc se comport
 
 ### 9. Otros contextos que no se excluyen
 No se ignoran: front matter YAML, bloques HTML (`<pre>`, `<code>`), URLs ni el texto de los links. Un `$` dentro de ellos podría tomarse como fórmula.
+
+## Display math
+
+### 17. Las filas se miden parcheando MathJax
+`recordTableRows` (`src/renderer.ts`) parchea `SVGmtable.placeRows` de MathJax 3.2.2 para medir las filas. Si se actualiza MathJax puede dejar de funcionar; el modo por filas cae a franjas cuando las medidas no cierran con el `viewBox`, así que no rompe, pero degrada el render sin avisar.
+
+### 18. Los bloques se dibujan dentro de las líneas que ya tienen
+VS Code no puede agregar espacio entre líneas: las filas más altas que una línea (fracciones apiladas, matrices dentro de una fila) se achican, y las líneas con `$$`, `\begin` y `\end` quedan vacías. Un bloque que habría que achicar demasiado se muestra como TeX (modo `render`) o como chip (modo `chip`).
+
+### 19. Una tabla solo se dibuja por filas en casos acotados
+Hace falta que cada fila empiece en su propia línea y que el bloque no tenga nada más que la tabla; si no, se dibuja en franjas y, al editarlo, todo el bloque muestra su TeX.
+
+### 20. Plegado automático basado en comandos y temporizadores
+En el modo `chip` el plegado usa `editor.fold` / `editor.unfold` con una espera de 500 ms (`FOLD_DELAY_MS`), y el desplegado de plegados viejos usa otra espera igual, porque VS Code restaura el plegado guardado al terminar de calcular las regiones. Solo actúan sobre el editor activo. Verificado por tests, no a mano: falta mirar parpadeos al abrir archivos grandes con muchos bloques. Además, el hover de un bloque que supera ~100 KB muestra un aviso en vez de la vista previa (límite de VS Code).
 
 ## Sin verificar
 
