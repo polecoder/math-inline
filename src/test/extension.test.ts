@@ -855,6 +855,40 @@ suite('KaTeX warnings: edge cases', () => {
 		assert.strictEqual(problem.length, 0);
 	});
 
+	test('katexProblem reports each unsupported command at its own offset and length', () => {
+		const cases: { tex: string; message: string; position: number; length: number }[] = [
+			{ tex: String.raw`\foo`, message: 'Undefined control sequence: \\foo', position: 0, length: 4 },
+			{ tex: String.raw`\ce{H2O}`, message: 'Undefined control sequence: \\ce', position: 0, length: 3 },
+			{ tex: String.raw`\bbox[red]{x}`, message: 'Undefined control sequence: \\bbox', position: 0, length: 5 },
+			{ tex: 'a^b^c', message: 'Double superscript', position: 3, length: 1 },
+			{ tex: '}', message: "Expected 'EOF', got '}'", position: 0, length: 1 },
+		];
+		for (const { tex, message, position, length } of cases) {
+			assert.deepStrictEqual(katexProblem({ start: 0, end: tex.length, tex }), { message, position, length }, tex);
+		}
+	});
+
+	test('katexProblem accepts empty TeX and macros defined in the formula', () => {
+		for (const tex of ['', String.raw`\newcommand{\f}{1}\f`, String.raw`\mathbb{R}`, String.raw`\color{red}x`]) {
+			assert.strictEqual(katexProblem({ start: 0, end: tex.length, tex }), undefined, tex);
+		}
+	});
+
+	test('katexProblem renders display-only environments only in display mode', () => {
+		const tex = String.raw`\begin{align}a&b\end{align}`;
+		assert.strictEqual(katexProblem({ start: 0, end: tex.length, tex, display: true }), undefined);
+		for (const display of [false, undefined]) {
+			const problem = katexProblem({ start: 0, end: tex.length, tex, display });
+			assert.ok(problem);
+			assert.strictEqual(problem.message, '{align} can be used only in display mode.');
+		}
+	});
+
+	test('katexProblem reports no position and no length when KaTeX gives no token', () => {
+		assert.deepStrictEqual(katexProblem({ start: 0, end: 10, tex: String.raw`\tag{1}x` }),
+			{ message: '\\tag works only in display equations', position: undefined, length: 0 });
+	});
+
 	test('publishes warnings with the KaTeX explanation and the extension as source', async () => {
 		const document = (await openEditor(String.raw`A $\bbox[red]{x}$ and $$\bbox{y}$$` + '\n')).document;
 		api.katex.check(document);
@@ -864,6 +898,14 @@ suite('KaTeX warnings: edge cases', () => {
 			assert.strictEqual(d.source, 'Math Inline');
 			assert.strictEqual(d.message, "VS Code's Markdown preview (KaTeX) cannot render this formula: Undefined control sequence: \\bbox");
 		}
+	});
+
+	test('underlines the whole formula when KaTeX reports no position', async () => {
+		const document = (await openEditor(String.raw`A $\tag{1}x$ end` + '\n')).document;
+		api.katex.check(document);
+		const diagnostics = api.katex.getDiagnostics(document.uri);
+		assert.deepStrictEqual(diagnostics.map(d => document.getText(d.range)), [String.raw`$\tag{1}x$`]);
+		assert.match(diagnostics[0].message, /: \\tag works only in display equations$/);
 	});
 
 	test('publishes no warnings for formulas both engines render', async () => {
