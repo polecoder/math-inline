@@ -26,6 +26,7 @@ Una extensión no puede leer los colores del tema, así que `resolveColor` (`src
 ### 5. Display math (`$$...$$`) no se renderiza
 El parser lo detecta solo para ignorarlo (ni el inline `$$x$$` ni el bloque multilínea). Para v0.2: al menos `$$...$$` en una sola línea como `displaystyle` inline; para bloques multilínea hay que decidir cómo ocultar las líneas intermedias (¿folding?).
 - **Resuelto:** `$$...$$` de una línea se renderiza en modo display (o como chip); los bloques multilínea se pliegan en un chip con vista previa en el hover y se despliegan con el cursor adentro. Pendiente: probar el render "rebanado" en franjas por línea para dibujar el bloque en el editor.
+- **Resuelto:** los bloques se dibujan en el editor, por filas (tablas con una fila por línea, recortadas de la tabla completa) o por franjas (el resto). Las filas se miden parcheando `SVGmtable.placeRows` de MathJax 3.2.2 (`src/renderer.ts`, `recordTableRows`): si se actualiza MathJax hay que verificar que siga funcionando (el modo por filas cae a franjas si las medidas no cierran con el `viewBox`).
 
 ### 6. Delimitadores `\(...\)` y `\[...\]` no soportados.
 

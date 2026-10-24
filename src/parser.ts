@@ -85,6 +85,29 @@ export function findInlineMath(text: string): MathSpan[] {
 }
 
 /**
+ * @brief Ubica un offset del TeX de una fórmula como línea y columna, contando los saltos de línea del TeX.
+ *
+ * No se puede sumar el offset a `span.start`: el TeX de los bloques no tiene los `\r` de los
+ * documentos CRLF, así que cada línea anterior correría la posición un carácter.
+ *
+ * @param span Fórmula.
+ * @param offset Posición dentro de `span.tex`.
+ * @return Línea relativa a la del delimitador de apertura y columna: en la línea 0, relativa al
+ * comienzo del TeX (después del delimitador); en las demás, desde el comienzo de la línea.
+ */
+export function texLocation(span: MathSpan, offset: number): { line: number; column: number } {
+	let line = 0;
+	let lineStart = 0;
+	for (let i = 0; i < offset; i++) {
+		if (span.tex[i] === '\n') {
+			line++;
+			lineStart = i + 1;
+		}
+	}
+	return { line, column: offset - lineStart };
+}
+
+/**
  * @brief Indica si una fórmula es un bloque `$$...$$` que ocupa más de una línea.
  *
  * @param span Fórmula a examinar.

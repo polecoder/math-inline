@@ -31,6 +31,8 @@ suite("config", () => {
         scale: 1,
         color: "",
         foldDisplayMath: true,
+        displayMath: "render",
+        katexWarnings: true,
       });
     });
 
@@ -54,6 +56,8 @@ suite("config", () => {
           scale: 1,
           color: "#ffcc00",
           foldDisplayMath: true,
+          displayMath: "render",
+          katexWarnings: true,
         });
       } finally {
         await setGlobalConfig("mathInline", "color", undefined);
@@ -133,6 +137,8 @@ suite("config", () => {
           scale: 1,
           color: "rebeccapurple",
           foldDisplayMath: true,
+          displayMath: "render",
+          katexWarnings: true,
         }),
         "rebeccapurple",
       );
@@ -157,6 +163,8 @@ suite("config", () => {
             scale: 1,
             color: "",
             foldDisplayMath: true,
+            displayMath: "render",
+            katexWarnings: true,
           }),
           color,
         );

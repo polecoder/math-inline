@@ -68,6 +68,9 @@ suite('MathDecorator behavior', () => {
 				errors: [],
 				revealed: [],
 				unfolded: [],
+				blocks: [],
+				ghosts: [],
+				rows: [],
 			});
 		});
 
@@ -132,7 +135,7 @@ suite('MathDecorator behavior', () => {
 		test('leaves an empty document without decorations', async () => {
 			const editor = await openEditor('');
 			api.decorator.update(editor);
-			assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [], unfolded: [] });
+			assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [], unfolded: [], blocks: [], ghosts: [], rows: [] });
 		});
 	});
 
@@ -143,7 +146,7 @@ suite('MathDecorator behavior', () => {
 			try {
 				await setGlobalConfig('mathInline', 'enabled', false);
 				api.decorator.update(editor);
-				assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [], unfolded: [] });
+				assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [], unfolded: [], blocks: [], ghosts: [], rows: [] });
 			} finally {
 				await setGlobalConfig('mathInline', 'enabled', undefined);
 			}
@@ -203,13 +206,15 @@ suite('MathDecorator behavior', () => {
 	});
 
 	suite('isLarge', () => {
-		test('is true only for formulas that need shrinking below the inline limit', () => {
-			assert.strictEqual(api.decorator.isLarge(inlineSpan(BIG_TEX)), true);
-			assert.strictEqual(api.decorator.isLarge(inlineSpan('x^2')), false);
+		test('is true only for formulas that need shrinking below the inline limit', async () => {
+			const { document } = await openEditor('');
+			assert.strictEqual(api.decorator.isLarge(inlineSpan(BIG_TEX), document), true);
+			assert.strictEqual(api.decorator.isLarge(inlineSpan('x^2'), document), false);
 		});
 
-		test('is false for formulas with TeX errors', () => {
-			assert.strictEqual(api.decorator.isLarge(inlineSpan(String.raw`\frac{a`)), false);
+		test('is false for formulas with TeX errors', async () => {
+			const { document } = await openEditor('');
+			assert.strictEqual(api.decorator.isLarge(inlineSpan(String.raw`\frac{a`), document), false);
 		});
 	});
 

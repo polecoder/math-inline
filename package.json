@@ -72,10 +72,28 @@
           "default": "",
           "description": "CSS color for rendered formulas (e.g. #ffcc00). Leave empty to pick one based on the current theme."
         },
+        "mathInline.displayMath": {
+          "type": "string",
+          "enum": [
+            "render",
+            "chip"
+          ],
+          "enumDescriptions": [
+            "Draw multi-line $$...$$ blocks on their own lines: tables like aligned or cases one row per line, other formulas split across the block's lines.",
+            "Show multi-line $$...$$ blocks as a \"show formula\" chip with a preview on hover."
+          ],
+          "default": "render",
+          "description": "How multi-line $$...$$ blocks are shown in the editor."
+        },
+        "mathInline.katexWarnings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Warn (in the Problems panel) about formulas that render here but that VS Code's Markdown preview, which uses KaTeX, cannot render."
+        },
         "mathInline.foldDisplayMath": {
           "type": "boolean",
           "default": true,
-          "description": "Fold multi-line $$...$$ blocks into their \"show formula\" chip, and unfold them while the cursor is inside. When off, a block only shows its chip if you fold it by hand."
+          "description": "Fold multi-line $$...$$ blocks shown as a \"show formula\" chip, and unfold them while the cursor is inside. When off, a block only shows its chip if you fold it by hand. Blocks drawn in the editor are never folded automatically."
         }
       }
     }
@@ -93,6 +111,7 @@
     "package": "vsce package"
   },
   "devDependencies": {
+    "@types/katex": "^0.16.7",
     "@types/mocha": "^10.0.10",
     "@types/node": "24.x",
     "@types/vscode": "~1.90.0",
@@ -109,6 +128,7 @@
     "serialize-javascript": "^7.0.6"
   },
   "dependencies": {
+    "katex": "^0.16.11",
     "mathjax-full": "^3.2.2"
   }
 }
