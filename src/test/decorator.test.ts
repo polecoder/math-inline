@@ -206,15 +206,13 @@ suite('MathDecorator behavior', () => {
 	});
 
 	suite('isLarge', () => {
-		test('is true only for formulas that need shrinking below the inline limit', async () => {
-			const { document } = await openEditor('');
-			assert.strictEqual(api.decorator.isLarge(inlineSpan(BIG_TEX), document), true);
-			assert.strictEqual(api.decorator.isLarge(inlineSpan('x^2'), document), false);
+		test('is true only for formulas that need shrinking below the inline limit', () => {
+			assert.strictEqual(api.decorator.isLarge(inlineSpan(BIG_TEX)), true);
+			assert.strictEqual(api.decorator.isLarge(inlineSpan('x^2')), false);
 		});
 
-		test('is false for formulas with TeX errors', async () => {
-			const { document } = await openEditor('');
-			assert.strictEqual(api.decorator.isLarge(inlineSpan(String.raw`\frac{a`), document), false);
+		test('is false for formulas with TeX errors', () => {
+			assert.strictEqual(api.decorator.isLarge(inlineSpan(String.raw`\frac{a`)), false);
 		});
 	});
 

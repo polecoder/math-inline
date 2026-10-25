@@ -13,10 +13,6 @@ export interface MathInlineConfig {
 	scale: number;
 	/** Color de las fórmulas; cadena vacía para usar el color por defecto del tema (`mathInline.color`). */
 	color: string;
-	/** Indica si los bloques `$$` multilínea se pliegan automáticamente (`mathInline.foldDisplayMath`). */
-	foldDisplayMath: boolean;
-	/** Cómo se muestran los bloques `$$` multilínea: dibujados en sus líneas o como chip (`mathInline.displayMath`). */
-	displayMath: 'render' | 'chip';
 	/** Indica si se avisan las fórmulas que la vista previa de Markdown (KaTeX) no puede mostrar (`mathInline.katexWarnings`). */
 	katexWarnings: boolean;
 }
@@ -24,9 +20,8 @@ export interface MathInlineConfig {
 /**
  * @brief Lee la configuración `mathInline.*` del usuario.
  *
- * Aplica los valores por defecto (`enabled` verdadero, `scale` 1, `color` vacío, `foldDisplayMath` verdadero,
- * `displayMath` `'render'` y `katexWarnings` verdadero) y recorta los espacios de `color`. Cualquier valor
- * de `displayMath` distinto de `'chip'` se toma como `'render'`.
+ * Aplica los valores por defecto (`enabled` verdadero, `scale` 1, `color` vacío y `katexWarnings`
+ * verdadero) y recorta los espacios de `color`.
  *
  * @return Configuración vigente de la extensión.
  */
@@ -36,8 +31,6 @@ export function getConfig(): MathInlineConfig {
 		enabled: cfg.get<boolean>('enabled', true),
 		scale: cfg.get<number>('scale', 1),
 		color: cfg.get<string>('color', '').trim(),
-		foldDisplayMath: cfg.get<boolean>('foldDisplayMath', true),
-		displayMath: cfg.get<string>('displayMath', 'render') === 'chip' ? 'chip' : 'render',
 		katexWarnings: cfg.get<boolean>('katexWarnings', true),
 	};
 }
