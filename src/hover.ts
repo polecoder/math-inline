@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { MathDecorator } from './decorator';
+import { isDisplayBlock } from './parser';
 import { isError, render, RenderOptions } from './renderer';
 
 /** @brief Factor de ampliación de la fórmula mostrada en el hover. */
@@ -20,13 +21,15 @@ const MAX_MARKDOWN_LENGTH = 100_000;
 /**
  * @brief Proveedor de hover que muestra la fórmula ampliada al pasar el mouse sobre su código fuente.
  *
- * También cubre las fórmulas grandes mostradas como chip, ya que el `$` de apertura transparente
- * queda bajo el chip y el mouse cae dentro de la fórmula. En los bloques `$$` multilínea
- * el hover aparece sobre cualquier línea del bloque, no solo la del chip.
+ * También cubre las fórmulas inline grandes mostradas como chip, ya que el `$` de apertura
+ * transparente queda bajo el chip y el mouse cae dentro de la fórmula. Los bloques `$$`
+ * multilínea no tienen hover: se dibujan en sus propias líneas o se muestran como código.
  * Si la fórmula tiene errores de TeX no devuelve nada: el mensaje ya lo aporta la decoración de error.
  */
 export class MathHoverProvider implements vscode.HoverProvider {
 	/**
+	 * @brief Crea el proveedor asociado al decorador que mantiene las fórmulas parseadas.
+	 *
 	 * @param decorator Decorador del que se obtienen las fórmulas parseadas y las opciones de render.
 	 */
 	constructor(private readonly decorator: MathDecorator) {}
@@ -38,12 +41,13 @@ export class MathHoverProvider implements vscode.HoverProvider {
 	 *
 	 * @param document Documento Markdown consultado.
 	 * @param position Posición del cursor del mouse.
-	 * @return Hover con la imagen de la fórmula, o `undefined` si no hay fórmula en esa posición o no se pudo renderizar.
+	 * @return Hover con la imagen de la fórmula, o `undefined` si no hay fórmula en esa posición, es un
+	 * bloque `$$` multilínea o no se pudo renderizar.
 	 */
 	provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
 		const offset = document.offsetAt(position);
 		const span = this.decorator.getSpans(document).find(s => s.start <= offset && offset < s.end);
-		if (!span) {
+		if (!span || isDisplayBlock(span)) {
 			return undefined;
 		}
 		const range = new vscode.Range(document.positionAt(span.start), document.positionAt(span.end));

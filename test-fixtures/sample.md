@@ -16,7 +16,7 @@ $not math inside a fence$
 
 Single-line display math renders in place: $$\int_0^1 x\,dx = \frac{1}{2}$$, and a taller one becomes a chip: $$\sum_{k=1}^{n} k^2$$.
 
-Multi-line display blocks fold into a chip; put the cursor on it to edit:
+Multi-line display blocks are drawn on their own lines (a single integral by bands, a table by rows); put the cursor on a line to edit it:
 
 $$
 \int_0^1 x\,dx = \frac{1}{2}
@@ -29,7 +29,7 @@ $$
 \end{aligned}
 $$
 
-A block with a TeX error stays unfolded and underlined:
+A block with a TeX error shows its plain TeX, underlined:
 
 $$
 \frac{a
