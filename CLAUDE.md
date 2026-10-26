@@ -25,7 +25,8 @@ La documentación la mantiene el subagente **Publisher** (`.claude/agents/publis
 Cada vez que implementes o modifiques funcionalidad, antes de dar el trabajo por terminado (y antes de hacer commit):
 
 1. Si cambió `package.json`, invocá al subagente **Vulnerabilidades** indicándole qué dependencias cambiaron.
-2. Invocá al subagente **Tests** indicándole los archivos y símbolos que cambiaron. Si informa bugs, resolvelos (o consultalo con el usuario) antes de seguir.
-3. Invocá al subagente **Comentarios** indicándole los archivos y símbolos que cambiaron, incluidos los archivos de test que haya tocado el subagente Tests.
-4. Invocá al subagente **Publisher** indicándole qué cambió (funcionalidad, settings, comandos, bugs corregidos, problemas de `ISSUES.md` resueltos y limitaciones o pendientes que quedaron), incluidos los bugs que haya informado el subagente Tests. Si informa inconsistencias con el código o decisiones pendientes (como subir la versión), resolvelas o consultalo con el usuario.
-5. Revisá lo que cambió y corré `npm test`, `npm run check-types` y `npm run lint`.
+2. Invocá al subagente **Reviewer** indicándole los archivos que cambiaron. Si informa algún problema, resolvelo (o consultalo con el usuario) antes de seguir.
+3. Invocá al subagente **Tests** indicándole los archivos y símbolos que cambiaron. Si informa bugs, resolvelos (o consultalo con el usuario) antes de seguir.
+4. Invocá al subagente **Comentarios** indicándole los archivos y símbolos que cambiaron, incluidos los archivos de test que haya tocado el subagente Tests.
+5. Invocá al subagente **Publisher** indicándole qué cambió (funcionalidad, settings, comandos, bugs corregidos, problemas de `ISSUES.md` resueltos y limitaciones o pendientes que quedaron), incluidos los bugs que haya informado el subagente Tests. Si informa inconsistencias con el código o decisiones pendientes (como subir la versión), resolvelas o consultalo con el usuario.
+6. Revisá lo que cambió y corré `npm test`, `npm run check-types` y `npm run lint`.
