@@ -94,3 +94,26 @@ suite('MathHoverProvider', () => {
 		assert.strictEqual(provider.provideHover(document, document.positionAt(offset)), undefined);
 	});
 });
+
+suite('MathHoverProvider: display blocks', () => {
+	let provider: MathHoverProvider;
+	let document: vscode.TextDocument;
+
+	suiteSetup(async () => {
+		const api = await activateExtension();
+		provider = new MathHoverProvider(api.decorator);
+		document = (await openEditor('One $$x+y$$ line\n$$\n\\int_0^1 x\\,dx\n$$\n$$\n\\frac{a\n$$\n')).document;
+	});
+
+	test('returns undefined on every line of a multi-line block, even a broken one', () => {
+		for (const position of [new vscode.Position(1, 1), new vscode.Position(2, 3), new vscode.Position(3, 1), new vscode.Position(5, 2)]) {
+			assert.strictEqual(provider.provideHover(document, position), undefined, `line ${position.line}`);
+		}
+	});
+
+	test('still returns the preview of a single-line $$ formula', () => {
+		const hover = provider.provideHover(document, new vscode.Position(0, 7))!;
+		assert.ok(hover);
+		assert.deepStrictEqual(hover.range, new vscode.Range(0, 4, 0, 11));
+	});
+});

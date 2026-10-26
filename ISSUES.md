@@ -26,7 +26,7 @@ Una extensión no puede leer los colores del tema, así que `resolveColor` (`src
 ### 5. ~~Display math (`$$...$$`) no se renderiza~~
 Resuelto (aún sin publicar, va en `[Unreleased]`): 
 - `$$...$$` de una línea se renderiza en modo display (o como chip si no entra en la línea).
-- Los bloques multilínea se dibujan en el editor (`mathInline.displayMath` = `render`), por filas (tablas con una fila por línea, recortadas de la tabla completa) o por franjas del alto de una línea (el resto). Con `chip` se muestran como chip con vista previa en el hover, plegados si `mathInline.foldDisplayMath` está activo.
+- Los bloques multilínea se dibujan en el editor, por filas (tablas con una fila por línea, recortadas de la tabla completa) o por franjas del alto de una línea (el resto). Si no se pueden dibujar se muestran como TeX, sin hover; se quitó la opción de mostrarlos como chip (`displayMath`, `foldDisplayMath`) antes de publicarla.
 - Las posiciones de las filas y de los diagnósticos de KaTeX se calculan bien en documentos con CRLF.
 - Limitaciones que quedan: ver los ítems 17 a 20.
 
@@ -49,13 +49,13 @@ No se ignoran: front matter YAML, bloques HTML (`<pre>`, `<code>`), URLs ni el t
 `recordTableRows` (`src/renderer.ts`) parchea `SVGmtable.placeRows` de MathJax 3.2.2 para medir las filas. Si se actualiza MathJax puede dejar de funcionar; el modo por filas cae a franjas cuando las medidas no cierran con el `viewBox`, así que no rompe, pero degrada el render sin avisar.
 
 ### 18. Los bloques se dibujan dentro de las líneas que ya tienen
-VS Code no puede agregar espacio entre líneas: las filas más altas que una línea (fracciones apiladas, matrices dentro de una fila) se achican, y las líneas con `$$`, `\begin` y `\end` quedan vacías. Un bloque que habría que achicar demasiado se muestra como TeX (modo `render`) o como chip (modo `chip`).
+VS Code no puede agregar espacio entre líneas: las filas más altas que una línea (fracciones apiladas, matrices dentro de una fila) se achican, y las líneas con `$$`, `\begin` y `\end` quedan vacías. Un bloque que habría que achicar demasiado se muestra como TeX, sin vista previa.
 
 ### 19. Una tabla solo se dibuja por filas en casos acotados
 Hace falta que cada fila empiece en su propia línea y que el bloque no tenga nada más que la tabla; si no, se dibuja en franjas y, al editarlo, todo el bloque muestra su TeX.
 
-### 20. Plegado automático basado en comandos y temporizadores
-En el modo `chip` el plegado usa `editor.fold` / `editor.unfold` con una espera de 500 ms (`FOLD_DELAY_MS`), y el desplegado de plegados viejos usa otra espera igual, porque VS Code restaura el plegado guardado al terminar de calcular las regiones. Solo actúan sobre el editor activo. Verificado por tests, no a mano: falta mirar parpadeos al abrir archivos grandes con muchos bloques. Además, el hover de un bloque que supera ~100 KB muestra un aviso en vez de la vista previa (límite de VS Code).
+### 20. Desplegado de plegados viejos basado en comandos y temporizadores
+La extensión ya no pliega bloques, pero el desplegado de plegados viejos usa `editor.unfold` con una espera de 500 ms, porque VS Code restaura el plegado guardado al terminar de calcular las regiones. Solo actúa sobre el editor activo. Verificado por tests, no a mano: falta mirar parpadeos al abrir archivos grandes con muchos bloques.
 
 ## Sin verificar
 

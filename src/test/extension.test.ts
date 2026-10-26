@@ -415,13 +415,12 @@ suite('MathDecorator', () => {
 	});
 });
 
-suite('Display math as a chip', () => {
+suite('Display math blocks have no chip and no hover', () => {
 	let api: MathInlineApi;
 	let editor: vscode.TextEditor;
 
 	suiteSetup(async () => {
 		api = await vscode.extensions.getExtension<MathInlineApi>(EXTENSION_ID)!.activate();
-		await vscode.workspace.getConfiguration('mathInline').update('displayMath', 'chip', vscode.ConfigurationTarget.Global);
 		const document = await vscode.workspace.openTextDocument({
 			language: 'markdown',
 			content: 'Single line: $$x+y$$\n$$\n\\int_0^1 x\\,dx\n$$\n$$\n\\frac{a\n$$\n',
@@ -429,63 +428,30 @@ suite('Display math as a chip', () => {
 		editor = await vscode.window.showTextDocument(document);
 	});
 
-	suiteTeardown(async () => {
-		await vscode.workspace.getConfiguration('mathInline').update('displayMath', undefined, vscode.ConfigurationTarget.Global);
-	});
-
-	test('renders single-line $$ inline and folds multi-line blocks into a chip', async function () {
-		this.timeout(5000);
+	test('renders single-line $$ inline and draws multi-line blocks, never as a chip', () => {
 		editor.selection = new vscode.Selection(0, 0, 0, 0);
 		api.decorator.update(editor);
-		await sleep(1000);
 		const state = api.decorator.getState(editor)!;
 		assert.strictEqual(state.rendered.length, 1);
-		assert.strictEqual(state.collapsed.length, 1);
-		assert.strictEqual(state.collapsed[0].start.line, 1);
-		assert.strictEqual(state.collapsed[0].end.line, 3);
-		assert.strictEqual(state.errors.length, 1);
-		assert.ok(isVisible(editor, 1), 'the chip line stays visible');
-		assert.ok(!isVisible(editor, 2), 'the block body is folded');
-		assert.ok(isVisible(editor, 5), 'a block with a TeX error is not folded');
+		assert.deepStrictEqual(state.blocks.map(r => r.start.line), [1]);
+		assert.deepStrictEqual(state.errors.map(r => r.start.line), [4]);
+		assert.deepStrictEqual(state.collapsed, []);
 	});
 
-	test('unfolding a block by hand replaces its chip with the TeX', async () => {
-		await vscode.commands.executeCommand('editor.unfold', { selectionLines: [1], levels: 1, direction: 'up' });
-		await sleep(300);
-		const state = api.decorator.getState(editor)!;
-		assert.ok(isVisible(editor, 2));
-		assert.strictEqual(state.collapsed.length, 0);
-		assert.strictEqual(state.unfolded.length, 1);
-		assert.strictEqual(state.unfolded[0].start.line, 1);
+	test('hovering any line of a block shows no preview', async () => {
+		for (const position of [new vscode.Position(1, 1), new vscode.Position(2, 3), new vscode.Position(5, 2)]) {
+			const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+				'vscode.executeHoverProvider', editor.document.uri, position);
+			const contents = hovers.flatMap(h => h.contents).map(c => (c as vscode.MarkdownString).value ?? '');
+			assert.ok(!contents.some(c => c.includes('data:image/svg+xml')), `no preview at line ${position.line}`);
+		}
 	});
 
-	test('reveals a block when the cursor is on one of its lines', () => {
-		editor.selection = new vscode.Selection(2, 0, 2, 0);
-		api.decorator.update(editor);
-		const state = api.decorator.getState(editor)!;
-		assert.strictEqual(state.collapsed.length, 0);
-		assert.strictEqual(state.revealed.length, 1);
-		assert.strictEqual(state.revealed[0].start.line, 1);
-	});
-
-	test('hovering any line of a block shows its preview', async () => {
+	test('hovering a single-line $$ formula still shows its preview', async () => {
 		const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
-			'vscode.executeHoverProvider', editor.document.uri, new vscode.Position(2, 3));
+			'vscode.executeHoverProvider', editor.document.uri, new vscode.Position(0, 16));
 		const contents = hovers.flatMap(h => h.contents).map(c => (c as vscode.MarkdownString).value ?? '');
 		assert.ok(contents.some(c => c.includes('data:image/svg+xml')));
-	});
-
-	test('unfolds the block under the cursor', async function () {
-		this.timeout(5000);
-		editor.selection = new vscode.Selection(0, 0, 0, 0);
-		await vscode.commands.executeCommand('editor.fold', { selectionLines: [1], levels: 1, direction: 'up' });
-		await sleep(300);
-		assert.ok(!isVisible(editor, 2));
-
-		editor.selection = new vscode.Selection(1, 1, 1, 1);
-		api.decorator.update(editor);
-		await sleep(300);
-		assert.ok(isVisible(editor, 2), 'the block under the cursor is unfolded');
 	});
 
 	test('previews long blocks within the hover size limit', () => {
@@ -739,28 +705,6 @@ suite('Display math drawn in the editor: edge cases', () => {
 		assert.deepStrictEqual(state.ghosts.map(r => r.start.line), [3]);
 	});
 
-	test('leaves blocks as code when displayMath is chip', async function () {
-		this.timeout(10000);
-		const editor = await openEditor(`Intro\n\n${ALIGNED_BLOCK}`);
-		editor.selection = new vscode.Selection(0, 0, 0, 0);
-		api.decorator.update(editor);
-		assert.strictEqual(api.decorator.getState(editor)!.blocks.length, 1);
-		await withSetting('displayMath', 'chip', async () => {
-			await until(() => {
-				api.decorator.update(editor);
-				return api.decorator.getState(editor)!.blocks.length === 0;
-			});
-			const state = api.decorator.getState(editor)!;
-			// Auto-folding may already have turned the unfolded block into a chip.
-			assert.deepStrictEqual([...state.unfolded, ...state.collapsed], [new vscode.Range(2, 0, 8, 2)]);
-			assert.deepStrictEqual(state.ghosts, []);
-		});
-		await until(() => {
-			api.decorator.update(editor);
-			return api.decorator.getState(editor)!.blocks.length === 1;
-		});
-	});
-
 	test('draws nothing when the extension is disabled', async function () {
 		this.timeout(10000);
 		const editor = await openEditor(`Inline $x$\n\n${ALIGNED_BLOCK}`);
@@ -813,21 +757,12 @@ suite('MathDecorator.isLarge', () => {
 	 * @return Un booleano por fórmula, en orden de aparición.
 	 */
 	function largeFlags(): boolean[] {
-		return api.decorator.getSpans(document).map(span => api.decorator.isLarge(span, document));
+		return api.decorator.getSpans(document).map(span => api.decorator.isLarge(span));
 	}
 
-	test('flags tall inline formulas and blocks that are not drawn by rows', () => {
+	test('flags only tall inline formulas, never multi-line blocks', () => {
 		assert.strictEqual(api.decorator.getSpans(document).length, 6);
-		assert.deepStrictEqual(largeFlags(), [false, true, false, false, true, false]);
-	});
-
-	test('flags every multi-line block when displayMath is chip', async function () {
-		this.timeout(10000);
-		await withSetting('displayMath', 'chip', async () => {
-			await until(() => largeFlags()[3]);
-			assert.deepStrictEqual(largeFlags(), [false, true, false, true, true, false]);
-		});
-		await until(() => !largeFlags()[3]);
+		assert.deepStrictEqual(largeFlags(), [false, true, false, false, false, false]);
 	});
 });
 
@@ -1111,6 +1046,44 @@ suite('Display math that cannot be drawn is shown as code', () => {
 		await vscode.commands.executeCommand('editor.unfold', { selectionLines: [2], levels: 1, direction: 'up' });
 	});
 
+	test('a table block with a TeX error is underlined, not drawn by rows', async () => {
+		const editor = await openEditor('Intro\n\n$$\n\\begin{aligned}\na&=\\unknownMacro\\\\\nb&=2\n\\end{aligned}\n$$\n');
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		api.decorator.update(editor);
+		const state = api.decorator.getState(editor)!;
+		assert.deepStrictEqual(state.errors, [new vscode.Range(2, 0, 7, 2)]);
+		assert.deepStrictEqual([state.collapsed, state.unfolded, state.blocks, state.rows], [[], [], [], []]);
+	});
+
+	test('disabling the extension while stale folds are pending does not unfold a block folded by hand', async function () {
+		this.timeout(15000);
+		const editor = await openEditor(`Intro
+
+${ALIGNED_BLOCK}After
+More
+`);
+		editor.selection = new vscode.Selection(0, 0, 0, 0);
+		await until(() => {
+			api.decorator.update(editor);
+			return api.decorator.getState(editor)!.blocks.length === 1;
+		});
+		// Wait for the one-time cleanup of stale folds, then fold the block by hand.
+		await sleep(900);
+		await vscode.commands.executeCommand('editor.fold', { selectionLines: [2], levels: 1, direction: 'up' });
+		await until(() => isVisible(editor, 2) && !isVisible(editor, 3));
+		try {
+			// A configuration change schedules the cleanup again; disabling right after must cancel its effect.
+			await withSetting('scale', 1.01, async () => {
+				await withSetting('enabled', false, async () => {
+					await sleep(900);
+					assert.ok(!isVisible(editor, 3), 'the fold made by hand is kept');
+				});
+			});
+		} finally {
+			await vscode.commands.executeCommand('editor.unfold', { selectionLines: [2], levels: 1, direction: 'up' });
+		}
+	});
+
 	test('a block with invalid TeX is underlined, not a chip', async () => {
 		const editor = await openEditor('Intro\n\n$$\n\\frac{a\n$$\n');
 		editor.selection = new vscode.Selection(0, 0, 0, 0);
@@ -1118,28 +1091,5 @@ suite('Display math that cannot be drawn is shown as code', () => {
 		const state = api.decorator.getState(editor)!;
 		assert.deepStrictEqual(state.errors, [new vscode.Range(2, 0, 4, 2)]);
 		assert.deepStrictEqual([state.collapsed, state.unfolded, state.blocks], [[], [], []]);
-	});
-});
-
-suite('Stale fold cleanup', () => {
-	let api: MathInlineApi;
-
-	suiteSetup(async () => {
-		api = await vscode.extensions.getExtension<MathInlineApi>(EXTENSION_ID)!.activate();
-	});
-
-	test('does not unfold the blocks folded as chips when displayMath is chip', async function () {
-		this.timeout(20000);
-		await withSetting('displayMath', 'chip', async () => {
-			const editor = await openEditor(`Intro\n\n${ALIGNED_BLOCK}After\nMore\n`);
-			await until(() => {
-				api.decorator.update(editor);
-				return isVisible(editor, 2) && !isVisible(editor, 3);
-			}, 8000);
-			await sleep(1200);
-			assert.ok(!isVisible(editor, 3), 'the chip block stays folded');
-			api.decorator.update(editor);
-			assert.strictEqual(api.decorator.getState(editor)!.collapsed.length, 1);
-		});
 	});
 });
