@@ -96,6 +96,53 @@ export function layoutRows(tex: string, tolerant = false): number[] | undefined 
 }
 
 /**
+ * @brief Ubicación de las filas de un bloque `$$` en sus líneas, para calcular `blockScale`.
+ */
+export interface RowLayout {
+	/** Línea de cada fila, relativa a la primera línea del bloque. */
+	rowLines: number[];
+	/** Cantidad de líneas del bloque. */
+	lines: number;
+	/** Distancia en px de la línea base del texto al centro de la línea del editor. */
+	axis: number;
+}
+
+/**
+ * @brief Calcula la escala única con la que se dibujan todas las filas de un bloque.
+ *
+ * Cada fila se alinea por su línea base con la del texto y puede desbordar sobre el espacio
+ * libre de las líneas vecinas (VS Code no agranda la línea, la imagen se superpone). La escala
+ * es la mayor que cumple que las cajas de dos filas consecutivas no se superpongan (las cajas de
+ * MathJax ya dejan un margen alrededor de la tinta) y que la primera y la última fila no salgan
+ * del bloque. El centro de cada línea queda `layout.axis` px sobre la línea base, sin importar la escala.
+ *
+ * @param rows Alto (`height`) y profundidad (`depth`) de cada fila a escala 1, en px, respecto de su línea base.
+ * @param layout Líneas de las filas, cantidad de líneas del bloque y posición del centro de la línea.
+ * @param lineHeight Alto de una línea en px.
+ * @return Escala entre 0 y 1 (1 si todas las filas entran a tamaño completo).
+ */
+export function blockScale(rows: { height: number; depth: number }[], { rowLines, lines, axis }: RowLayout, lineHeight: number): number {
+	let scale = 1;
+	const limit = (extent: number, space: number) => {
+		if (extent > 0) {
+			scale = Math.min(scale, Math.max(0, space) / extent);
+		}
+	};
+	rows.forEach((row, i) => {
+		if (i === 0) {
+			limit(row.height, (rowLines[0] + 0.5) * lineHeight + axis);
+		}
+		if (i === rows.length - 1) {
+			limit(row.depth, (lines - 1 - rowLines[i] + 0.5) * lineHeight - axis);
+		} else {
+			// The axis offsets of both rows cancel out.
+			limit(row.depth + rows[i + 1].height, (rowLines[i + 1] - rowLines[i]) * lineHeight);
+		}
+	});
+	return scale;
+}
+
+/**
  * @brief Verifica que las filas no estén vacías y que cada una empiece en una línea distinta.
  *
  * @param tex TeX del bloque.

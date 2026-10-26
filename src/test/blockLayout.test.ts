@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { layoutRows } from '../blockLayout';
+import { blockScale, layoutRows } from '../blockLayout';
 
 /**
  * @brief Devuelve el texto de cada fila hallada por `layoutRows`, hasta el fin de su línea.
@@ -125,5 +125,93 @@ suite('layoutRows', () => {
 	test('rejects an empty environment', () => {
 		assert.strictEqual(layoutRows('\\begin{aligned}\\end{aligned}'), undefined);
 		assert.strictEqual(layoutRows('\\begin{aligned}\n  \n\\end{aligned}'), undefined);
+	});
+});
+
+/**
+ * @brief Verifica que dos números coincidan salvo errores de redondeo.
+ *
+ * @param actual Valor obtenido.
+ * @param expected Valor esperado.
+ */
+function assertClose(actual: number, expected: number): void {
+	assert.ok(Math.abs(actual - expected) < 1e-9, `expected ${expected} but got ${actual}`);
+}
+
+suite('blockScale', () => {
+	const LINE = 20;
+
+	test('returns 1 when there are no rows', () => {
+		assert.strictEqual(blockScale([], { rowLines: [], lines: 3, axis: 0 }, LINE), 1);
+	});
+
+	test('returns 1 when every row fits at full size', () => {
+		const rows = [{ height: 10, depth: 4 }, { height: 12, depth: 3 }];
+		assert.strictEqual(blockScale(rows, { rowLines: [1, 2], lines: 4, axis: 3 }, LINE), 1);
+	});
+
+	test('limits a single row by the space above its line', () => {
+		// Space above: 0.5 * 20 + 5 = 15 px for a 30 px tall row.
+		assertClose(blockScale([{ height: 30, depth: 0 }], { rowLines: [0], lines: 1, axis: 5 }, LINE), 0.5);
+	});
+
+	test('limits a single row by the space below its line', () => {
+		// Space below: 0.5 * 20 - 5 = 5 px for a 10 px deep row.
+		assertClose(blockScale([{ height: 10, depth: 10 }], { rowLines: [0], lines: 1, axis: 5 }, LINE), 0.5);
+	});
+
+	test('uses the free lines above and below a row in the middle of the block', () => {
+		const layout = { rowLines: [2], lines: 5, axis: 0 };
+		// 2.5 lines above and below: 50 px.
+		assert.strictEqual(blockScale([{ height: 50, depth: 50 }], layout, LINE), 1);
+		assertClose(blockScale([{ height: 100, depth: 10 }], layout, LINE), 0.5);
+		assertClose(blockScale([{ height: 10, depth: 200 }], layout, LINE), 0.25);
+	});
+
+	test('moves the space between the block edges with the axis', () => {
+		const rows = [{ height: 40, depth: 40 }];
+		const centered = blockScale(rows, { rowLines: [1], lines: 3, axis: 0 }, LINE);
+		const raised = blockScale(rows, { rowLines: [1], lines: 3, axis: 4 }, LINE);
+		// Above: 30 + axis, below: 30 - axis; the smaller one rules.
+		assertClose(centered, 30 / 40);
+		assertClose(raised, 26 / 40);
+	});
+
+	test('separates consecutive rows by the depth of one and the height of the next', () => {
+		// Rows on lines 1 and 3 leave 2 * 20 = 40 px between their baselines.
+		const layout = { rowLines: [1, 3], lines: 5, axis: 0 };
+		assert.strictEqual(blockScale([{ height: 10, depth: 18 }, { height: 20, depth: 5 }], layout, LINE), 1);
+		assertClose(blockScale([{ height: 10, depth: 5 }, { height: 55, depth: 5 }], layout, LINE), 40 / 60);
+	});
+
+	test('rows on adjacent lines get only the line height minus the gap', () => {
+		const layout = { rowLines: [1, 2], lines: 4, axis: 0 };
+		assertClose(blockScale([{ height: 5, depth: 9 }, { height: 18, depth: 5 }], layout, LINE), 20 / 27);
+	});
+
+	test('the axis does not change the space between consecutive rows', () => {
+		const rows = [{ height: 5, depth: 9 }, { height: 18, depth: 5 }];
+		const scales = [0, 3, 8].map(axis => blockScale(rows, { rowLines: [1, 2], lines: 4, axis }, LINE));
+		assert.deepStrictEqual(scales, [scales[0], scales[0], scales[0]]);
+	});
+
+	test('takes the most restrictive limit among all rows', () => {
+		const layout = { rowLines: [1, 2, 4], lines: 6, axis: 0 };
+		const rows = [{ height: 10, depth: 12 }, { height: 10, depth: 12 }, { height: 10, depth: 12 }];
+		// Rows 0-1 have 20 px for 22 px of ink; rows 1-2 have 40 px for 22 px.
+		assertClose(blockScale(rows, layout, LINE), 20 / 22);
+	});
+
+	test('ignores rows whose extent is zero or negative', () => {
+		const layout = { rowLines: [0, 1], lines: 2, axis: 0 };
+		assert.strictEqual(blockScale([{ height: -3, depth: -3 }, { height: 0, depth: 0 }], layout, LINE), 1);
+		// A row that rises above its baseline (negative depth) leaves room to the next one.
+		assert.strictEqual(blockScale([{ height: 0, depth: -50 }, { height: 36, depth: 0 }], layout, LINE), 1);
+		assertClose(blockScale([{ height: 0, depth: -10 }, { height: 36, depth: 0 }], layout, LINE), 20 / 26);
+	});
+
+	test('returns 0 when there is no space at all', () => {
+		// Space below: 0.5 * 20 - 12 < 0.
+		assert.strictEqual(blockScale([{ height: 1, depth: 1 }], { rowLines: [0], lines: 1, axis: 12 }, LINE), 0);
 	});
 });

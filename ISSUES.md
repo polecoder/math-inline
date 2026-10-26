@@ -49,13 +49,30 @@ No se ignoran: front matter YAML, bloques HTML (`<pre>`, `<code>`), URLs ni el t
 `recordTableRows` (`src/renderer.ts`) parchea `SVGmtable.placeRows` de MathJax 3.2.2 para medir las filas. Si se actualiza MathJax puede dejar de funcionar; el modo por filas cae a franjas cuando las medidas no cierran con el `viewBox`, así que no rompe, pero degrada el render sin avisar.
 
 ### 18. Los bloques se dibujan dentro de las líneas que ya tienen
-VS Code no puede agregar espacio entre líneas: las filas más altas que una línea (fracciones apiladas, matrices dentro de una fila) se achican, y las líneas con `$$`, `\begin` y `\end` quedan vacías. Un bloque que habría que achicar demasiado se muestra como TeX, sin vista previa.
+VS Code no puede agregar espacio entre líneas: y las líneas con `$$`, `\begin` y `\end` quedan vacías. Un bloque que habría que achicar demasiado se muestra como TeX, sin vista previa.
+
+Parcialmente resuelto: en los bloques por filas, todas las filas usan una única escala y una fila más alta que la línea desborda sobre el espacio libre de las líneas vecinas (`margin-top` negativo). La escala es la mayor que evita superposiciones entre filas consecutivas y que la primera y la última salgan del bloque. Si esa escala sería menor que 0.8, se vuelve al achique por fila. Las limitaciones del desborde están en los ítems 21 a 25.
 
 ### 19. Una tabla solo se dibuja por filas en casos acotados
 Hace falta que cada fila empiece en su propia línea y que el bloque no tenga nada más que la tabla; si no, se dibuja en franjas y, al editarlo, todo el bloque muestra su TeX.
 
 ### 20. Desplegado de plegados viejos basado en comandos y temporizadores
 La extensión ya no pliega bloques, pero el desplegado de plegados viejos usa `editor.unfold` con una espera de 500 ms, porque VS Code restaura el plegado guardado al terminar de calcular las regiones. Solo actúa sobre el editor activo. Verificado por tests, no a mano: falta mirar parpadeos al abrir archivos grandes con muchos bloques.
+
+### 21. Una fila que desborda puede tapar el TeX que se está editando
+Mientras se edita una línea del bloque, una fila vecina que desborda puede tapar parte del TeX revelado de esa línea.
+
+### 22. El desborde no se ve si la línea de la fila queda fuera de pantalla
+VS Code solo dibuja las líneas visibles: al hacer scroll, la parte desbordada de una fila cuya línea quedó fuera de pantalla no se ve.
+
+### 23. El centro de la línea es una estimación
+Se estima a 0.25 em de la fuente del editor sobre la línea base (`AXIS_EM` en `src/decorator.ts`). Con fuentes o `lineHeight` inusuales el desborde puede quedar algo corrido.
+
+### 24. Escala desactualizada con TeX inválido
+Si la edición deja el TeX inválido, se reutiliza el último render válido con su escala anterior aunque el layout de líneas haya cambiado. Es transitorio: se corrige apenas el TeX vuelve a ser válido.
+
+### 25. `margin-top` negativo sin verificar a mano
+Que el `margin-top` negativo de las imágenes evite correr la línea base del texto se comprobó solo con tests de las decoraciones, no en el editor.
 
 ## Sin verificar
 
