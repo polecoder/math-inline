@@ -14,6 +14,7 @@ All notable changes to the "math-inline" extension are documented in this file, 
 
 - Rendered formulas are much smaller (glyphs are defined once per image), so long formulas fit in VS Code's hover size limit instead of showing as text.
 - Tables inside inline formulas (like `$\begin{pmatrix}...\end{pmatrix}$`) use text style, so they fit the line more often.
+- In multi-line `$$` blocks drawn by rows, all rows now share one size instead of each being shrunk on its own, so rows with fractions or integrals no longer look smaller than the others. A tall row may overlap the free space of neighbouring lines. If that would make rows smaller than 80%, rows are shrunk one by one as before.
 
 ### Security
 

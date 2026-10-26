@@ -6,6 +6,7 @@ import { RegisterHTMLHandler } from 'mathjax-full/js/handlers/html.js';
 import { AllPackages } from 'mathjax-full/js/input/tex/AllPackages.js';
 import { SVGmtable } from 'mathjax-full/js/output/svg/Wrappers/mtable.js';
 import type { LiteElement } from 'mathjax-full/js/adaptors/lite/Element.js';
+import { blockScale, RowLayout } from './blockLayout';
 
 /**
  * @brief Opciones de render de una fórmula.
@@ -86,6 +87,8 @@ const EXCLUDED_PACKAGES = ['noerrors', 'noundefined', 'autoload', 'require'];
 const CACHE_LIMIT = 500;
 /** @brief Margen vertical, en em, que se agrega arriba y abajo de cada fila recortada para no cortar la tinta. */
 const ROW_PADDING_EM = 0.05;
+/** @brief Escala única mínima aceptable para las filas de un bloque; si hace falta menos, cada fila se achica por separado. */
+const MIN_ROW_SCALE = 0.8;
 
 /** @brief Documento de MathJax usado para convertir TeX a SVG. */
 type MathDocument = ReturnType<typeof mathjax.document>;
@@ -309,16 +312,21 @@ export function render(tex: string, options: RenderOptions): RenderResult {
  *
  * Convierte la fórmula entera en modo display una sola vez y recorta cada fila, de modo que
  * las columnas quedan alineadas como en la tabla completa. Cada imagen lleva solo el grupo
- * de su fila y los glifos que usa. Cada fila se achica por separado para no superar
+ * de su fila y los glifos que usa. Si se indica en qué línea va cada fila (`layout`),
+ * todas las filas usan la misma escala, calculada con `blockScale`: pueden superar `maxHeight` y
+ * desbordar sobre el espacio libre de las líneas vecinas. Si esa escala sería menor que
+ * `MIN_ROW_SCALE`, o sin `layout`, cada fila se achica por separado para no superar
  * `maxHeight`, y `offset` compensa el achique para que el límite entre la primera y la
  * segunda columna quede en el mismo lugar en todas las filas.
  *
  * @param tex Código TeX de la fórmula, que debe ser una única tabla.
- * @param options Color, escala, alto máximo de cada fila y `textStyle` (tablas compactas).
+ * @param options Color, escala, alto máximo de cada fila (alto de línea) y `textStyle` (tablas compactas).
+ * @param layout Líneas de las filas dentro del bloque, cantidad de líneas y centro de la línea.
  * @return Una imagen por fila, el error de MathJax, o `undefined` si la fórmula no es una sola tabla.
  */
-export function renderRows(tex: string, options: RenderOptions): RenderedRow[] | RenderError | undefined {
-	return cached(cacheKey('rows', tex, options), () => renderRowsUncached(tex, options));
+export function renderRows(tex: string, options: RenderOptions, layout?: RowLayout): RenderedRow[] | RenderError | undefined {
+	const key = layout ? `${layout.rowLines.join(',')}/${layout.lines}/${layout.axis}` : '';
+	return cached(`${cacheKey('rows', tex, options)}\u0000${key}`, () => renderRowsUncached(tex, options, layout));
 }
 
 /**
@@ -394,10 +402,13 @@ function renderUncached(tex: string, { color, exPx, textStyle, maxHeight, displa
  * tablas o si las filas no quedan dentro de la imagen.
  *
  * @param tex Código TeX de la fórmula.
- * @param options Color, tamaño de `ex`, alto máximo de cada fila y `textStyle`.
+ * @param options Color, tamaño de `ex`, alto de línea (`maxHeight`) y `textStyle`.
+ * @param layout Ubicación de las filas para la escala única (ver `renderRows`).
  * @return Una imagen por fila, el error de MathJax, o `undefined` si no se puede recortar.
  */
-function renderRowsUncached(tex: string, { color, exPx, textStyle, maxHeight }: RenderOptions): RenderedRow[] | RenderError | undefined {
+function renderRowsUncached(
+	tex: string, { color, exPx, textStyle, maxHeight }: RenderOptions, layout?: RowLayout,
+): RenderedRow[] | RenderError | undefined {
 	const converted = convert(tex, true, textStyle ?? false);
 	if (isError(converted)) {
 		return converted;
@@ -430,7 +441,19 @@ function renderRowsUncached(tex: string, { color, exPx, textStyle, maxHeight }: 
 
 	const pxPerUnit = exToPx(attr(svg, 'width'), exPx) / box.width;
 	const heights = table.rows.map(row => (row.height + row.depth + 2 * ROW_PADDING_EM) * 1000);
-	const fits = heights.map(h => (maxHeight === undefined ? 1 : Math.min(1, maxHeight / (h * pxPerUnit))));
+	let fits = heights.map(h => (maxHeight === undefined ? 1 : Math.min(1, maxHeight / (h * pxPerUnit))));
+	if (maxHeight !== undefined && layout?.rowLines.length === table.rows.length) {
+		// Rows may overflow into the free space of the neighbouring lines, all at the same scale.
+		// The boxes leave out ROW_PADDING_EM, which only keeps the crop from cutting the ink.
+		const extents = table.rows.map(row => ({
+			height: row.height * 1000 * pxPerUnit,
+			depth: row.depth * 1000 * pxPerUnit,
+		}));
+		const scale = blockScale(extents, layout, maxHeight);
+		if (scale >= MIN_ROW_SCALE) {
+			fits = fits.map(() => scale);
+		}
+	}
 	const widest = Math.max(...fits);
 	return table.rows.map((row, i) => {
 		const fit = fits[i];

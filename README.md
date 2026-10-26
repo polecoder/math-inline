@@ -11,7 +11,7 @@ Renders inline `$...$` math in Markdown files **directly in the editor**, not ju
 - Formulas are scaled down to fit the line. Those that would get too small (matrices, stacked fractions, big operators with limits) are replaced by a **∑ show formula** chip: hover it to see the formula in display mode. While you edit one, the preview opens next to the cursor.
 - Display math written on one line, like `$$\int_0^1 x\,dx$$`, is rendered in display style the same way, and becomes a chip when it would not fit.
 - Multi-line `$$ ... $$` blocks are drawn on their own lines:
-  - A block that is a single table (`aligned`, `cases`, `array`, matrices, `gathered`, ...) with one row per line shows **each row rendered on its own line**, with the columns aligned as in the full formula. Fractions in tables use text style so rows fit the line height.
+  - A block that is a single table (`aligned`, `cases`, `array`, matrices, `gathered`, ...) with one row per line shows **each row rendered on its own line**, with the columns aligned as in the full formula. Fractions in tables use text style, and all rows share the same size.
   - Put the cursor on a row to edit it: only that line shows its TeX, with a live preview of the row at the end of the line, while the rest of the block stays rendered. While the TeX is half-typed (say, an unclosed `\frac{`), the other rows keep their last good rendering and the edited line is underlined.
   - Any other block (a single integral, a long sum split across lines, ...) is cut into horizontal bands, one per line of the block.
   - Blocks that would get too small to read, that you fold by hand, or that have a TeX error show their plain TeX, without a preview. The extension never folds blocks by itself, and blocks left folded from an earlier session are unfolded when the document opens.
@@ -32,7 +32,7 @@ Command: **Math Inline: Toggle Inline Math Rendering**, bound to <kbd>Ctrl</kbd>
 
 ## Known limitations
 
-- VS Code cannot add room between lines, so a `$$` block is drawn within the lines it already has: rows taller than a line (stacked fractions, matrices inside a row) are scaled down, and the lines with `$$`, `\begin` and `\end` stay empty.
+- VS Code cannot add room between lines, so a `$$` block is drawn within the lines it already has: rows taller than a line (stacked fractions, matrices inside a row) share one scale and may overlap the empty space of neighbouring lines, and the lines with `$$`, `\begin` and `\end` stay empty.
 - A table is drawn by rows only if every row starts on its own line and the block holds nothing but the table; otherwise it is drawn in bands, and while you edit it the whole block shows its TeX.
 - VS Code cannot change line heights, so tall formulas are scaled down or collapsed into a chip instead of being shown at their natural size. Use `mathInline.scale` to adjust the overall size.
 - With word wrap on, VS Code wraps lines based on the length of the (hidden) TeX source, so a line full of formulas may wrap earlier than it looks like it should.

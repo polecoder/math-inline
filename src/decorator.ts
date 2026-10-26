@@ -19,6 +19,8 @@ const DEBOUNCE_MS = 150;
 const EX_PER_EM = 0.5;
 /** @brief Achique mínimo aceptable inline; las fórmulas que necesitan más se muestran como chip. */
 const MIN_INLINE_SCALE = 0.8;
+/** @brief Altura, en em de la fuente del editor, del centro de la línea sobre la línea base del texto (la mitad de la x-height, aprox.). */
+const AXIS_EM = 0.25;
 /** @brief Texto del chip que reemplaza a las fórmulas demasiado grandes. */
 const CHIP_TEXT = '∑ show formula';
 /** @brief Ancho del chip, en caracteres (`ch`) de la fuente del editor. */
@@ -330,8 +332,11 @@ export class MathDecorator implements vscode.Disposable {
 	 * @brief Decide cómo dibujar un bloque `$$` multilínea en sus propias líneas y lo renderiza.
 	 *
 	 * Si `layoutRows` encuentra una tabla con una fila por línea y `renderRows` da la misma
-	 * cantidad de filas, se dibuja por filas (en estilo texto, con el alto de línea como máximo).
+	 * cantidad de filas, se dibuja por filas (en estilo texto, todas a la misma escala y desbordando
+	 * sobre el espacio libre de las líneas vecinas si hace falta; ver `renderRows`).
 	 * Las líneas de cada fila se ubican con `texPosition`, para no correrse en documentos CRLF.
+	 * A `renderRows` se le pasa un `RowLayout` con las líneas relativas al inicio del bloque, la
+	 * cantidad de líneas y `axis` (`AXIS_EM` por el tamaño de fuente del editor).
 	 * Si no, se corta en franjas sobre todas las líneas del bloque, salvo que haya que achicarlo
 	 * por debajo de `MIN_BAND_SCALE`: entonces devuelve `unfit`, que significa que no se puede
 	 * dibujar (el bloque se muestra como código).
@@ -341,17 +346,20 @@ export class MathDecorator implements vscode.Disposable {
 	 * @return Forma de dibujarlo, o el error de TeX.
 	 */
 	private blockView(document: vscode.TextDocument, span: MathSpan): BlockView | RenderError {
+		const startLine = document.positionAt(span.start).line;
+		const lines = document.positionAt(span.end).line - startLine + 1;
 		const offsets = layoutRows(span.tex);
 		if (offsets) {
-			const rows = renderRows(span.tex, this.inlineOptions());
+			const rowLines = offsets.map(offset => texPosition(document, span, offset).line);
+			const layout = { rowLines: rowLines.map(line => line - startLine), lines, axis: getFontSize() * AXIS_EM };
+			const rows = renderRows(span.tex, this.inlineOptions(), layout);
 			if (rows && isError(rows)) {
 				return rows;
 			}
 			if (rows?.length === offsets.length) {
-				return { kind: 'rows', rows, rowLines: offsets.map(offset => texPosition(document, span, offset).line) };
+				return { kind: 'rows', rows, rowLines };
 			}
 		}
-		const lines = document.positionAt(span.end).line - document.positionAt(span.start).line + 1;
 		const bands = renderBands(span.tex, { ...this.renderOptions(), maxHeight: getLineHeight() }, lines);
 		if (isError(bands)) {
 			return bands;
@@ -507,6 +515,9 @@ export class MathDecorator implements vscode.Disposable {
 	 * En reposo, cada línea del bloque oculta su código: en el modo `rows` la línea donde empieza
 	 * cada fila muestra su imagen (con `offset` como margen) y las demás quedan vacías; en el modo
 	 * `bands` cada línea muestra su franja. Todas las líneas llevan el borde de `blockType`.
+	 * Las imágenes de las filas (y la vista previa `ghost`) llevan un `margin-top` negativo igual a su
+	 * alto: así una fila más alta que la línea no agranda la caja de línea ni desplaza el texto, y
+	 * desborda sobre las líneas vecinas.
 	 *
 	 * Con el cursor en el bloque, en el modo `rows` solo se revelan las líneas tocadas por la
 	 * selección, con la vista previa de su fila al final (`ghostType`), y las líneas delimitadoras
@@ -573,10 +584,12 @@ export class MathDecorator implements vscode.Disposable {
 					out.errors.push({ range: lineRange, hoverMessage: `Math Inline: ${error}` });
 				} else if (row) {
 					const end = document.lineAt(line).range.end;
-					out.ghosts.push({ range: new vscode.Range(end, end), renderOptions: { after: { ...imageAttachment(row), margin: '0 0 0 2ch' } } });
+					out.ghosts.push({ range: new vscode.Range(end, end), renderOptions: { after: { ...imageAttachment(row), margin: `-${row.height}px 0 0 2ch` } } });
 				}
 			} else if (row) {
-				out.blockLines.push({ range: lineRange, renderOptions: { before: { ...imageAttachment(row), margin: `0 0 0 ${row.offset}px` } } });
+				// The negative top margin keeps a row taller than the line from growing the line box (which
+				// would push its baseline down): the image overflows into the neighbouring lines instead.
+				out.blockLines.push({ range: lineRange, renderOptions: { before: { ...imageAttachment(row), margin: `-${row.height}px 0 0 ${row.offset}px` } } });
 				out.rows.push(lineRange);
 			} else if (touched.size > 0) {
 				out.faded.push(lineRange);
