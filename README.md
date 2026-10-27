@@ -8,7 +8,8 @@ Renders inline `$...$` math in Markdown files **directly in the editor**, not ju
 - Move the cursor into a formula (or select it) to edit its TeX source; it renders again when you leave.
 - Invalid TeX is underlined, and hovering it shows the error.
 - Hover a formula's source to see a larger rendering.
-- Formulas are scaled down to fit the line. Those that would get too small (matrices, stacked fractions, big operators with limits) are replaced by a **∑ show formula** chip: hover it to see the formula in display mode. While you edit one, the preview opens next to the cursor.
+- A formula taller than the line is drawn larger (up to its natural size) and overflows onto the empty lines above and below it. It uses the same single scale as the rows of `$$` blocks. A run of empty lines between two formulas is split in half between them. With word wrap on, it overflows upward only if the formula ends before the wrap column, and downward only if the whole line fits before it.
+- Without empty lines around (a dense paragraph), the formula is scaled down to fit the line instead. Those that would get too small (matrices, stacked fractions, big operators with limits) are replaced by a **∑ show formula** chip: hover it to see the formula in display mode. While you edit one, the preview opens next to the cursor.
 - Display math written on one line, like `$$\int_0^1 x\,dx$$`, is rendered in display style the same way, and becomes a chip when it would not fit.
 - Multi-line `$$ ... $$` blocks are drawn on their own lines:
   - A block that is a single table (`aligned`, `cases`, `array`, matrices, `gathered`, ...) with one row per line shows **each row rendered on its own line**, with the columns aligned as in the full formula. Fractions in tables use text style, and all rows share the same size.
@@ -34,8 +35,10 @@ Command: **Math Inline: Toggle Inline Math Rendering**, bound to <kbd>Ctrl</kbd>
 
 - VS Code cannot add room between lines, so a `$$` block is drawn within the lines it already has: rows taller than a line (stacked fractions, matrices inside a row) share one scale and may overlap the empty space of neighbouring lines, and the lines with `$$`, `\begin` and `\end` stay empty.
 - A table is drawn by rows only if every row starts on its own line and the block holds nothing but the table; otherwise it is drawn in bands, and while you edit it the whole block shows its TeX.
-- VS Code cannot change line heights, so tall formulas are scaled down or collapsed into a chip instead of being shown at their natural size. Use `mathInline.scale` to adjust the overall size.
+- VS Code cannot change line heights, so a tall formula can only grow over empty neighbouring lines. Without them it is scaled down or collapsed into a chip instead of being shown at its natural size. Use `mathInline.scale` to adjust the overall size.
 - With word wrap on, VS Code wraps lines based on the length of the (hidden) TeX source, so a line full of formulas may wrap earlier than it looks like it should.
+- The extension cannot read the editor width. With `editor.wordWrap` set to `on` or `bounded` it assumes a wrap column of 60, so in a wide editor some formulas could overflow but do not. With `wordWrapColumn` it uses `editor.wordWrapColumn`; with `off` there is no restriction. <kbd>Alt</kbd>+<kbd>Z</kbd> (**Toggle Word Wrap**) is not detected; change the setting instead. Tabs count as one column.
+- Overflow is measured on the document, not on what is visible: next to a folded region, a formula may cover the line shown after the fold, and folding or unfolding does not update it. The overflowing part is not drawn if its line scrolls out of view, and it can cover the revealed TeX of a neighbouring formula.
 - Extensions cannot read theme colors, so the default formula color depends only on the theme kind. Set `mathInline.color` to match your theme exactly.
 
 ## Development

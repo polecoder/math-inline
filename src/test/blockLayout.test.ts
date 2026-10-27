@@ -1,5 +1,17 @@
 import * as assert from 'assert';
-import { blockScale, layoutRows } from '../blockLayout';
+import { blockScale, inlineRoom, layoutRows, wrapSafeRoom } from '../blockLayout';
+
+/**
+ * @brief Calcula el espacio libre de una fórmula en un documento descripto por sus líneas libres.
+ *
+ * @param free Una cadena por línea del documento: `.` es una línea libre y cualquier otro carácter, una con contenido.
+ * @param first Primera línea de la fórmula.
+ * @param last Última línea de la fórmula.
+ * @return Resultado de `inlineRoom`.
+ */
+function roomIn(free: string, first: number, last = first): { up: number; down: number } {
+	return inlineRoom(first, last, free.length, line => free[line] === '.');
+}
 
 /**
  * @brief Devuelve el texto de cada fila hallada por `layoutRows`, hasta el fin de su línea.
@@ -213,5 +225,60 @@ suite('blockScale', () => {
 	test('returns 0 when there is no space at all', () => {
 		// Space below: 0.5 * 20 - 12 < 0.
 		assert.strictEqual(blockScale([{ height: 1, depth: 1 }], { rowLines: [0], lines: 1, axis: 12 }, LINE), 0);
+	});
+});
+
+suite('inlineRoom', () => {
+	test('is 0 above and below when the neighbour lines have content', () => {
+		assert.deepStrictEqual(roomIn('xFx', 1), { up: 0, down: 0 });
+	});
+
+	test('splits in half a run of free lines shared with a line that has content', () => {
+		assert.deepStrictEqual(roomIn('x..F...x', 3), { up: 1, down: 1.5 });
+	});
+
+	test('keeps a single free line between two lines with content as half a line', () => {
+		assert.deepStrictEqual(roomIn('xx.F.xx', 3), { up: 0.5, down: 0.5 });
+	});
+
+	test('gives the whole run when it reaches the top of the document', () => {
+		assert.deepStrictEqual(roomIn('..Fx', 2), { up: 2, down: 0 });
+	});
+
+	test('gives the whole run when it reaches the bottom of the document', () => {
+		assert.deepStrictEqual(roomIn('xF...', 1), { up: 0, down: 3 });
+	});
+
+	test('has nothing beyond the document edge when the formula is on the first or last line', () => {
+		assert.deepStrictEqual(roomIn('F.', 0), { up: 0, down: 1 });
+		assert.deepStrictEqual(roomIn('.F', 1), { up: 1, down: 0 });
+	});
+
+	test('counts from the first line up and from the last line down for a multi-line formula', () => {
+		assert.deepStrictEqual(roomIn('x.FF..x', 2, 3), { up: 0.5, down: 1 });
+	});
+
+	test('does not count free lines beyond the first line with content', () => {
+		assert.deepStrictEqual(roomIn('..x.F.x', 4), { up: 0.5, down: 0.5 });
+	});
+});
+
+suite('wrapSafeRoom', () => {
+	const room = { up: 2, down: 3 };
+
+	test('returns the room untouched when word-wrap is off', () => {
+		assert.deepStrictEqual(wrapSafeRoom(room, 500, 900, undefined), room);
+	});
+
+	test('keeps both sides when the formula ends and the line ends exactly at the column', () => {
+		assert.deepStrictEqual(wrapSafeRoom(room, 60, 60, 60), room);
+	});
+
+	test('drops both sides when the formula ends past the column', () => {
+		assert.deepStrictEqual(wrapSafeRoom(room, 61, 61, 60), { up: 0, down: 0 });
+	});
+
+	test('drops only the room below when the formula ends in time but the line goes on', () => {
+		assert.deepStrictEqual(wrapSafeRoom(room, 40, 80, 60), { up: 2, down: 0 });
 	});
 });

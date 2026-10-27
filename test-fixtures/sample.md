@@ -6,6 +6,10 @@ Greek and operators: $\alpha, \beta \in \mathbb{R}$, $\sum_{k=1}^{n} k = \frac{n
 
 Matrices are tall: $\begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}$.
 
+Dense paragraph, no blank lines around, so no overflow (a chip instead):
+the matrix $\begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}$ sits between text lines
+with no room around it.
+
 Invalid TeX is underlined: $\frac{a$ and $\undefinedmacro$.
 
 Not math: prices like $5 and $10, escaped \$x\$, and code `$x$`.

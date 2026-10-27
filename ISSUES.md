@@ -12,6 +12,7 @@ Con `editor.wordWrap` activo (por defecto en Markdown), VS Code parte las línea
 ### 2. Las fórmulas altas pisan las líneas vecinas
 Matrices, fracciones y sumas con límites se dibujan a tamaño real y se superponen con la línea de arriba y la de abajo (ver `\begin{pmatrix}` en el sample). VS Code no permite cambiar la altura de una línea.
 - **Resuelto en v0.2.0:** se achican hasta entrar en la línea y, si haría falta bajar de 0,8, se muestran como chip con vista previa en el hover.
+- **Parcialmente resuelto (sin publicar, va en `[Unreleased]`):** si hay líneas en blanco arriba o abajo, la fórmula inline (o `$$...$$` de una línea) se dibuja más grande, hasta tamaño real, y desborda sobre ellas con la escala única de `blockScale` (`inlineView`, `freeRoom`). Cada racha de líneas en blanco se reparte por mitades con la línea del otro lado, salvo en el borde del documento. Con word-wrap solo se desborda hacia arriba si la fórmula termina antes de la columna de corte y hacia abajo si la línea entera entra (`wrapSafeRoom`). En un párrafo denso (sin líneas en blanco) sigue el comportamiento anterior: achique hasta 0,8 y chip. Limitaciones: ítems 26 a 30.
 
 ### 3. El color por defecto solo depende del tipo de tema
 Una extensión no puede leer los colores del tema, así que `resolveColor` (`src/config.ts`) elige entre 4 colores fijos según `ColorThemeKind`. En temas con un foreground distinto del gris estándar la fórmula no coincide con el texto.
@@ -73,6 +74,23 @@ Si la edición deja el TeX inválido, se reutiliza el último render válido con
 
 ### 25. `margin-top` negativo sin verificar a mano
 Que el `margin-top` negativo de las imágenes evite correr la línea base del texto se comprobó solo con tests de las decoraciones, no en el editor.
+
+## Desborde de fórmulas inline
+
+### 26. La columna de word-wrap es una suposición
+La API no expone el ancho del editor. Con `editor.wordWrap` en `on` o `bounded` se supone `ASSUMED_WRAP_COLUMN` (60, en `src/config.ts`); en un editor ancho se renuncia a desbordes que serían seguros. "Toggle Word Wrap" (<kbd>Alt</kbd>+<kbd>Z</kbd>) cambia el wrap sin tocar la configuración y la extensión no se entera: hay que cambiar el setting.
+
+### 27. `freeRoom` mira las líneas del documento, no las visibles
+Si la línea en blanco vecina está dentro de una región plegada, se cuenta como libre y la imagen puede tapar la línea que aparece después del plegado. Plegar o desplegar no recalcula las fórmulas inline.
+
+### 28. Valen para el desborde inline los ítems 22, 23 y 25
+La parte desbordada no se ve si su línea queda fuera de pantalla (22), el centro de la línea es una estimación (23) y el `margin-top` negativo no se verificó a mano (25). Además, una imagen desbordada puede tapar el TeX revelado de una fórmula en la línea vecina, como en el ítem 21.
+
+### 29. Los tabs cuentan como una columna en la heurística del wrap
+`wrapSafeRoom` mide en caracteres del código fuente; con tabs el wrap real puede cortar antes de lo calculado.
+
+### 30. `pointer-events: none` sin verificar a mano
+Que la imagen desbordada deje pasar los clics a la línea en blanco no se comprobó en el editor, solo con tests de las decoraciones.
 
 ## Sin verificar
 

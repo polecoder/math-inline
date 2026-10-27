@@ -66,6 +66,37 @@ export function getLineHeight(): number {
 }
 
 /**
+ * @brief Columna de corte que se supone cuando el word-wrap depende del ancho de la ventana, que la API no expone.
+ *
+ * Es conservadora para un editor angosto, como el que queda con la vista previa al costado.
+ */
+export const ASSUMED_WRAP_COLUMN = 60;
+
+/**
+ * @brief Devuelve la columna donde puede cortar el word-wrap del editor.
+ *
+ * Lee `editor.wordWrap` y `editor.wordWrapColumn` con alcance de Markdown. Con `wordWrapColumn`
+ * se usa la columna configurada. Con `on`, `ASSUMED_WRAP_COLUMN`, y con `bounded`, la menor de las dos,
+ * porque esos modos cortan en el borde de la ventana.
+ *
+ * @return Columna de corte, o `undefined` si el word-wrap está desactivado.
+ */
+export function getWrapColumn(): number | undefined {
+	const cfg = vscode.workspace.getConfiguration('editor', { languageId: 'markdown' });
+	const column = cfg.get<number>('wordWrapColumn', 80);
+	switch (cfg.get<string>('wordWrap', 'off')) {
+		case 'off':
+			return undefined;
+		case 'wordWrapColumn':
+			return column;
+		case 'bounded':
+			return Math.min(column, ASSUMED_WRAP_COLUMN);
+		default:
+			return ASSUMED_WRAP_COLUMN;
+	}
+}
+
+/**
  * @brief Determina el color con el que se pintan las fórmulas.
  *
  * Usa el color configurado por el usuario; si está vacío, elige uno por defecto

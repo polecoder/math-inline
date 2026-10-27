@@ -12,6 +12,8 @@ All notable changes to the "math-inline" extension are documented in this file, 
 
 ### Changed
 
+- Inline formulas (and one-line `$$...$$`) that do not fit the line are no longer turned into a chip right away. If there are empty lines above or below, they are drawn larger (up to natural size) and overflow onto them, with the same single scale as the rows of `$$` blocks. A run of empty lines between two formulas is split in half. In a dense paragraph nothing changes: they shrink down to 80% and then become a chip. The overflowing image does not take mouse clicks.
+- With word wrap on, a formula overflows upward only if it ends before the wrap column, and downward only if the whole line fits before it. The column is `editor.wordWrapColumn` with `wordWrapColumn`, 60 with `on`, the smaller of both with `bounded`, and there is no limit with `off`. Math Inline now reacts to changes of `editor.wordWrap` and `editor.wordWrapColumn`.
 - Rendered formulas are much smaller (glyphs are defined once per image), so long formulas fit in VS Code's hover size limit instead of showing as text.
 - Tables inside inline formulas (like `$\begin{pmatrix}...\end{pmatrix}$`) use text style, so they fit the line more often.
 - In multi-line `$$` blocks drawn by rows, all rows now share one size instead of each being shrunk on its own, so rows with fractions or integrals no longer look smaller than the others. A tall row may overlap the free space of neighbouring lines. If that would make rows smaller than 80%, rows are shrunk one by one as before.

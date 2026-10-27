@@ -89,3 +89,41 @@ export async function setGlobalConfig(section: string, key: string, value: unkno
 	await vscode.workspace.getConfiguration(section).update(key, value, vscode.ConfigurationTarget.Global);
 	await changed;
 }
+
+/**
+ * @brief Configura el word-wrap de los documentos Markdown (`[markdown]` global) y espera a que se notifique.
+ *
+ * Hace falta pasar por `[markdown]` porque Markdown trae `editor.wordWrap` en `on` por defecto y un valor
+ * global sin lenguaje no lo pisa. Como el listener del test se registra después que el de la extensión,
+ * cuando la promesa se resuelve la extensión ya procesó el cambio.
+ *
+ * @param wordWrap Valor de `editor.wordWrap`; `undefined` restaura la configuración original.
+ * @param column Valor de `editor.wordWrapColumn` (opcional).
+ * @return Promesa que se resuelve cuando el cambio ya fue notificado.
+ */
+export async function setMarkdownWordWrap(wordWrap: string | undefined, column?: number): Promise<void> {
+	const value = wordWrap === undefined ? undefined : { 'editor.wordWrap': wordWrap, 'editor.wordWrapColumn': column };
+	const effective = () => {
+		const cfg = vscode.workspace.getConfiguration('editor', { languageId: 'markdown' });
+		return [cfg.get('wordWrap'), cfg.get('wordWrapColumn')];
+	};
+	const before = effective();
+	let sub: vscode.Disposable | undefined;
+	const changed = new Promise<void>(resolve => {
+		sub = vscode.workspace.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('editor.wordWrap', { languageId: 'markdown' })
+				|| e.affectsConfiguration('editor.wordWrapColumn', { languageId: 'markdown' })) {
+				resolve();
+			}
+		});
+	});
+	try {
+		await vscode.workspace.getConfiguration().update('[markdown]', value, vscode.ConfigurationTarget.Global);
+		// When the effective values do not change VS Code sends no event, so there is nothing to wait for.
+		if (JSON.stringify(effective()) !== JSON.stringify(before)) {
+			await changed;
+		}
+	} finally {
+		sub?.dispose();
+	}
+}

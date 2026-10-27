@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
-import { getConfig, getFontSize, getLineHeight, resolveColor } from "../config";
-import { activateExtension, setGlobalConfig, waitFor } from "./helpers";
+import { ASSUMED_WRAP_COLUMN, getConfig, getFontSize, getLineHeight, getWrapColumn, resolveColor } from "../config";
+import { activateExtension, setGlobalConfig, setMarkdownWordWrap, waitFor } from "./helpers";
 
 /**
  * @brief Cambia el tema de color y espera a que VS Code lo active.
@@ -113,6 +113,38 @@ suite("config", () => {
       } finally {
         await setGlobalConfig("editor", "lineHeight", undefined);
       }
+    });
+  });
+
+  suite("getWrapColumn", () => {
+    suiteTeardown(async () => {
+      await setMarkdownWordWrap(undefined);
+    });
+
+    test("assumes the default column because Markdown wraps by default", () => {
+      assert.strictEqual(getWrapColumn(), ASSUMED_WRAP_COLUMN);
+    });
+
+    test("is undefined when word-wrap is off", async () => {
+      await setMarkdownWordWrap("off", 30);
+      assert.strictEqual(getWrapColumn(), undefined);
+    });
+
+    test("uses the configured column with wordWrapColumn", async () => {
+      await setMarkdownWordWrap("wordWrapColumn", 120);
+      assert.strictEqual(getWrapColumn(), 120);
+    });
+
+    test("takes the smaller of the column and the assumed one with bounded", async () => {
+      await setMarkdownWordWrap("bounded", 30);
+      assert.strictEqual(getWrapColumn(), 30);
+      await setMarkdownWordWrap("bounded", 120);
+      assert.strictEqual(getWrapColumn(), ASSUMED_WRAP_COLUMN);
+    });
+
+    test("ignores the column and assumes the default with on", async () => {
+      await setMarkdownWordWrap("on", 30);
+      assert.strictEqual(getWrapColumn(), ASSUMED_WRAP_COLUMN);
     });
   });
 

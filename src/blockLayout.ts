@@ -143,6 +143,63 @@ export function blockScale(rows: { height: number; depth: number }[], { rowLines
 }
 
 /**
+ * @brief Espacio libre, en líneas, sobre el que puede desbordar una fórmula inline.
+ */
+export interface InlineRoom {
+	/** Líneas libres arriba de la fórmula. */
+	up: number;
+	/** Líneas libres abajo de la fórmula. */
+	down: number;
+}
+
+/**
+ * @brief Calcula cuántas líneas libres hay arriba y abajo de una fórmula inline.
+ *
+ * Cuenta las líneas libres consecutivas que la rodean. Una racha entre la fórmula y otra línea con
+ * contenido se reparte por mitades, como el límite de media línea entre filas de `blockScale`, para
+ * que una fórmula del otro lado también pueda desbordar sin superponerse. Una racha que llega al
+ * principio o al final del documento es entera de la fórmula.
+ *
+ * @param first Primera línea de la fórmula.
+ * @param last Última línea de la fórmula.
+ * @param lineCount Cantidad de líneas del documento.
+ * @param isFree Indica si una línea está libre (en blanco).
+ * @return Líneas libres arriba y abajo (pueden ser fraccionarias).
+ */
+export function inlineRoom(first: number, last: number, lineCount: number, isFree: (line: number) => boolean): InlineRoom {
+	const run = (from: number, step: number) => {
+		let line = from;
+		while (line >= 0 && line < lineCount && isFree(line)) {
+			line += step;
+		}
+		const count = Math.abs(line - from);
+		return line < 0 || line >= lineCount ? count : count / 2;
+	};
+	return { up: run(first - 1, -1), down: run(last + 1, 1) };
+}
+
+/**
+ * @brief Anula el espacio libre que el word-wrap podría volver inseguro.
+ *
+ * Con word-wrap, la línea libre de arriba solo toca la primera fila visual de la línea y la de
+ * abajo, la última. VS Code corta según el largo del código fuente aunque esté oculto, así que se
+ * mide en columnas del código: arriba se desborda solo si la fórmula termina antes de `column`, y
+ * abajo solo si toda la línea entra. Los tabs cuentan como una columna.
+ *
+ * @param room Espacio libre calculado con `inlineRoom`.
+ * @param end Columna donde termina la fórmula, en su última línea.
+ * @param length Largo de esa línea.
+ * @param column Columna donde puede cortar el word-wrap, o `undefined` si está desactivado.
+ * @return `room`, con 0 en el lado que no es seguro.
+ */
+export function wrapSafeRoom(room: InlineRoom, end: number, length: number, column: number | undefined): InlineRoom {
+	if (column === undefined) {
+		return room;
+	}
+	return { up: end <= column ? room.up : 0, down: length <= column ? room.down : 0 };
+}
+
+/**
  * @brief Verifica que las filas no estén vacías y que cada una empiece en una línea distinta.
  *
  * @param tex TeX del bloque.

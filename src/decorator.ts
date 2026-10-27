@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 import { findMath, isDisplayBlock, MathSpan, texLocation } from './parser';
-import { layoutRows } from './blockLayout';
+import { blockScale, InlineRoom, inlineRoom, layoutRows, wrapSafeRoom } from './blockLayout';
 import {
 	isError, render, renderBands, RenderedBands, RenderedMath, RenderedRow, RenderError, RenderOptions, renderRows, RenderResult,
 } from './renderer';
-import { getConfig, getFontSize, getLineHeight, MathInlineConfig, resolveColor } from './config';
+import { getConfig, getFontSize, getLineHeight, getWrapColumn, MathInlineConfig, resolveColor } from './config';
 
 /**
  * @brief Valor de `textDecoration` que oculta el código fuente detrás de la imagen renderizada.
@@ -50,6 +50,15 @@ type BlockView =
 	| { kind: 'rows'; rows: RenderedRow[]; rowLines: number[] }
 	| { kind: 'bands'; bands: RenderedBands }
 	| { kind: 'unfit' };
+
+/**
+ * @brief Forma en que se dibuja una fórmula inline (o un `$$...$$` de una sola línea).
+ *
+ * `image`: su imagen; con `overflow`, más alta que la línea (se dibuja con la escala única de
+ * `blockScale`) y desbordando sobre las líneas en blanco vecinas.
+ * `chip`: no entra con una escala aceptable y se muestra como chip.
+ */
+type InlineView = { kind: 'image'; image: RenderedMath; overflow: boolean } | { kind: 'chip' };
 
 /**
  * @brief Decoraciones que `update` acumula para un editor antes de aplicarlas.
@@ -194,7 +203,8 @@ export class MathDecorator implements vscode.Disposable {
 	/**
 	 * @brief Crea los tipos de decoración, suscribe los eventos relevantes y hace una primera actualización.
 	 *
-	 * Además de `mathInline.*`, reacciona a los cambios de `editor.fontSize` y `editor.lineHeight`.
+	 * Además de `mathInline.*`, reacciona a los cambios de `editor.fontSize`, `editor.lineHeight`,
+	 * `editor.wordWrap` y `editor.wordWrapColumn` (estos dos definen cuánto puede desbordar una fórmula, ver `freeRoom`).
 	 * También se suscribe a `onDidChangeActiveTextEditor`, porque `unfoldStaleFolds` solo actúa
 	 * sobre el editor activo y hay que actualizarlo cuando recibe el foco. Con
 	 * `onDidChangeTextEditorVisibleRanges` (plegado, desplegado o scroll) actualiza el editor
@@ -235,7 +245,8 @@ export class MathDecorator implements vscode.Disposable {
 			vscode.window.onDidChangeActiveColorTheme(() => this.updateAll()),
 			vscode.workspace.onDidChangeConfiguration(e => {
 				if (e.affectsConfiguration('mathInline') || e.affectsConfiguration('editor.fontSize')
-					|| e.affectsConfiguration('editor.lineHeight')) {
+					|| e.affectsConfiguration('editor.lineHeight') || e.affectsConfiguration('editor.wordWrap')
+					|| e.affectsConfiguration('editor.wordWrapColumn')) {
 					this.config = getConfig();
 					this.staleFoldsCleared.clear();
 					this.updateAll();
@@ -311,21 +322,88 @@ export class MathDecorator implements vscode.Disposable {
 	}
 
 	/**
-	 * @brief Indica si una fórmula inline es demasiado grande para mostrarse en la línea.
+	 * @brief Indica si una fórmula inline es demasiado grande para mostrarse en el editor.
 	 *
-	 * Es grande si al renderizarla con `renderInEditor` debe achicarse por debajo de
-	 * `MIN_INLINE_SCALE` para entrar en una línea. Las fórmulas con error y los bloques `$$`
+	 * Es grande si `inlineView` decide que es chip: ni achicada en su línea ni desbordando sobre las
+	 * líneas en blanco vecinas alcanza `MIN_INLINE_SCALE`. Las fórmulas con error y los bloques `$$`
 	 * multilínea (que nunca son chip ni tienen hover) no cuentan.
 	 *
 	 * @param span Fórmula a examinar.
+	 * @param document Documento de la fórmula, para contar sus líneas libres; sin él solo se considera
+	 * la línea propia de la fórmula, sin líneas libres para desbordar.
 	 * @return `true` si la fórmula se muestra como chip y necesita la vista previa del hover.
 	 */
-	isLarge(span: MathSpan): boolean {
+	isLarge(span: MathSpan, document?: vscode.TextDocument): boolean {
 		if (isDisplayBlock(span)) {
 			return false;
 		}
-		const result = this.renderInEditor(span);
-		return !isError(result) && result.fit < MIN_INLINE_SCALE;
+		// Only the decision matters here, so the scaled image is not rendered.
+		const view = this.inlineView(document, span, false);
+		return !isError(view) && view.kind === 'chip';
+	}
+
+	/**
+	 * @brief Decide cómo dibujar una fórmula inline (o un `$$...$$` de una sola línea) y la renderiza.
+	 *
+	 * Si entra en la línea sin achicarse, usa el render de `renderInEditor`. Si no, calcula con
+	 * `blockScale`, como para una tabla de una fila, la mayor escala con la que puede desbordar
+	 * sobre las líneas en blanco vecinas (`freeRoom`); no se usa el interlineado. Se queda con la
+	 * mejor entre esa escala y la de achicarla en su línea, y si es menor que `MIN_INLINE_SCALE`,
+	 * la fórmula es chip. Si gana el desborde, la imagen se rinde con esa escala única.
+	 *
+	 * @param document Documento de la fórmula; sin él no hay líneas libres y la fórmula no puede desbordar.
+	 * @param span Fórmula que no es un bloque `$$` multilínea.
+	 * @param draw Si es `false`, no renderiza la imagen escalada y devuelve la de tamaño real
+	 * (para quien solo necesita saber si es chip, como `isLarge`).
+	 * @return Forma de dibujarla, o el error de TeX.
+	 */
+	private inlineView(document: vscode.TextDocument | undefined, span: MathSpan, draw = true): InlineView | RenderError {
+		const fitted = this.renderInEditor(span);
+		if (isError(fitted) || fitted.fit === 1) {
+			return isError(fitted) ? fitted : { kind: 'image', image: fitted, overflow: false };
+		}
+		const room = document ? this.freeRoom(document, span) : { up: 0, down: 0 };
+		if (room.up === 0 && room.down === 0) {
+			return fitted.fit < MIN_INLINE_SCALE ? { kind: 'chip' } : { kind: 'image', image: fitted, overflow: false };
+		}
+		const options: RenderOptions = { ...this.renderOptions(), textStyle: !span.display, display: span.display };
+		const full = render(span.tex, options);
+		if (isError(full)) {
+			return full;
+		}
+		const depth = -full.verticalAlign;
+		const scale = blockScale([{ height: full.height - depth, depth }],
+			{ rowLines: [room.up], lines: room.up + 1 + room.down, axis: getFontSize() * AXIS_EM }, getLineHeight());
+		if (Math.max(scale, fitted.fit) < MIN_INLINE_SCALE) {
+			return { kind: 'chip' };
+		}
+		if (scale <= fitted.fit) {
+			return { kind: 'image', image: fitted, overflow: false };
+		}
+		if (!draw) {
+			return { kind: 'image', image: full, overflow: true };
+		}
+		const image = render(span.tex, { ...options, exPx: options.exPx * scale });
+		return isError(image) ? image : { kind: 'image', image, overflow: true };
+	}
+
+	/**
+	 * @brief Calcula las líneas en blanco vecinas sobre las que puede desbordar una fórmula inline.
+	 *
+	 * Usa `inlineRoom` (cada racha de líneas en blanco se reparte por mitades con la fórmula del otro
+	 * lado, salvo en el borde del documento; un bloque `$$` nunca tiene líneas en blanco, así que no se
+	 * pisan sus filas) y `wrapSafeRoom` con la columna de `getWrapColumn`. Con word-wrap mide en
+	 * columnas del código fuente, no en ancho de imagen.
+	 *
+	 * @param document Documento de la fórmula.
+	 * @param span Fórmula.
+	 * @return Líneas libres arriba y abajo.
+	 */
+	private freeRoom(document: vscode.TextDocument, span: MathSpan): InlineRoom {
+		const start = document.positionAt(span.start);
+		const end = document.positionAt(span.end);
+		const room = inlineRoom(start.line, end.line, document.lineCount, line => document.lineAt(line).isEmptyOrWhitespace);
+		return wrapSafeRoom(room, end.character, document.lineAt(end.line).text.length, getWrapColumn());
 	}
 
 	/**
@@ -390,9 +468,10 @@ export class MathDecorator implements vscode.Disposable {
 	 * @brief Recalcula y aplica las decoraciones de un editor Markdown.
 	 *
 	 * Las fórmulas tocadas por alguna selección quedan reveladas (sin decorar), las
-	 * inválidas se subrayan con el mensaje de error, las que requerirían un achique menor
-	 * a `MIN_INLINE_SCALE` quedan como chip (`collapsed`) y el resto se reemplaza por su
-	 * imagen. Los `$$...$$` de una sola línea se renderizan en modo display. Los bloques
+	 * inválidas se subrayan con el mensaje de error y el resto se decide con `inlineView`: chip
+	 * (`collapsed`) si requeriría un achique menor a `MIN_INLINE_SCALE`, imagen en la línea, o imagen
+	 * que desborda sobre las líneas en blanco vecinas (con `margin-top` igual a `-alto` y
+	 * `pointer-events: none`, para no tapar los clics de las líneas vecinas). Los `$$...$$` de una sola línea se renderizan en modo display. Los bloques
 	 * multilínea se dibujan primero con `drawBlock` (que los acumula en `blocks`, `rows`, `ghosts`
 	 * y las líneas ocultas); si este devuelve `false`, el bloque no se pudo dibujar (plegado a
 	 * mano, demasiado chico, con error) y se muestra como código (en `unfolded`, o en `revealed` o
@@ -438,19 +517,33 @@ export class MathDecorator implements vscode.Disposable {
 				revealed.push(range);
 				continue;
 			}
-			const result = this.renderInEditor(span);
+			if (block) {
+				const result = this.renderInEditor(span);
+				if (isError(result)) {
+					errors.push({ range, hoverMessage: `Math Inline: ${result.error}` });
+				} else {
+					// A block that cannot be drawn in the editor shows its TeX, never a chip.
+					unfolded.push(range);
+				}
+				continue;
+			}
+			const result = this.inlineView(editor.document, span);
 			if (isError(result)) {
 				errors.push({ range, hoverMessage: `Math Inline: ${result.error}` });
-			} else if (block) {
-				// A block that cannot be drawn in the editor shows its TeX, never a chip.
-				unfolded.push(range);
-			} else if (result.fit < MIN_INLINE_SCALE) {
+			} else if (result.kind === 'chip') {
 				// The preview comes from MathHoverProvider, since the opening `$` stays as hoverable text under the chip.
 				collapsed.push(range);
 				chips.push({ range: new vscode.Range(range.start, range.start.translate(0, 1)) });
 				chipSources.push({ range: new vscode.Range(range.start.translate(0, 1), range.end) });
+			} else if (result.overflow) {
+				// Like the block rows: the negative top margin lets the image overflow into the free space around the line.
+				// pointer-events: none keeps the overflowing part from taking the clicks meant for the neighbouring lines.
+				const before = imageAttachment(result.image);
+				hidden.push({ range, renderOptions: { before: {
+					...before, margin: `-${result.image.height}px 0 0 0`, textDecoration: `${before.textDecoration} pointer-events: none;`,
+				} } });
 			} else {
-				hidden.push({ range, renderOptions: { before: imageAttachment(result) } });
+				hidden.push({ range, renderOptions: { before: imageAttachment(result.image) } });
 			}
 		}
 
@@ -664,7 +757,9 @@ export class MathDecorator implements vscode.Disposable {
 	}
 
 	/**
-	 * @brief Identifica la fórmula inline grande que contiene al cursor, junto con la versión del documento.
+	 * @brief Identifica la fórmula inline grande (chip) que contiene al cursor, junto con la versión del documento.
+	 *
+	 * Decide con `isLarge` pasándole el documento, para que cuente las líneas libres igual que `update`.
 	 *
 	 * @param editor Editor a consultar.
 	 * @return Clave `uri:inicio:versión`, o `undefined` si hay varias selecciones o una no vacía,
@@ -676,7 +771,7 @@ export class MathDecorator implements vscode.Disposable {
 		}
 		const offset = editor.document.offsetAt(editor.selection.active);
 		const span = this.getSpans(editor.document).find(s => s.start < offset && offset < s.end);
-		if (!span || !this.isLarge(span)) {
+		if (!span || !this.isLarge(span, editor.document)) {
 			return undefined;
 		}
 		return `${editor.document.uri.toString()}:${span.start}:${editor.document.version}`;
