@@ -72,7 +72,7 @@ Se estima a 0.25 em de la fuente del editor sobre la línea base (`AXIS_EM` en `
 Si la edición deja el TeX inválido, se reutiliza el último render válido con su escala anterior aunque el layout de líneas haya cambiado. Es transitorio: se corrige apenas el TeX vuelve a ser válido.
 
 ### 25. `margin-top` negativo sin verificar a mano
-Que el `margin-top` negativo de las imágenes evite correr la línea base del texto se comprobó solo con tests de las decoraciones, no en el editor.
+No hay tests de lo visual (tamaños, escalas, márgenes de las decoraciones, contenido del SVG): se verifica a mano en cada actualización. Queda por verificar a mano que el `margin-top` negativo de las imágenes de las filas de los bloques `$$` no corra la línea base del texto.
 
 ## Sin verificar
 
