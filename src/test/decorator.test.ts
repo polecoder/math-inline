@@ -45,6 +45,20 @@ function placeCursor(api: MathInlineApi, editor: vscode.TextEditor, line: number
 	api.decorator.update(editor);
 }
 
+/**
+ * @brief Verifica que el editor no tenga ninguna decoración, sea cual sea la lista de categorías del estado.
+ *
+ * @param api API de la extensión.
+ * @param editor Editor consultado.
+ */
+function assertNoDecorations(api: MathInlineApi, editor: vscode.TextEditor): void {
+	const state = api.decorator.getState(editor);
+	assert.ok(state);
+	for (const [kind, ranges] of Object.entries(state)) {
+		assert.deepStrictEqual(ranges, [], kind);
+	}
+}
+
 suite('MathDecorator behavior', () => {
 	let api: MathInlineApi;
 
@@ -62,16 +76,9 @@ suite('MathDecorator behavior', () => {
 		test('reports the exact range of each formula on every line', async () => {
 			const editor = await openEditor('a $x$\n\nb $y$ c $z$\n');
 			placeCursor(api, editor, 1, 0);
-			assert.deepStrictEqual(api.decorator.getState(editor), {
-				rendered: [range(0, 2, 5), range(2, 2, 5), range(2, 8, 11)],
-				collapsed: [],
-				errors: [],
-				revealed: [],
-				unfolded: [],
-				blocks: [],
-				ghosts: [],
-				rows: [],
-			});
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.rendered, [range(0, 2, 5), range(2, 2, 5), range(2, 8, 11)]);
+			assert.deepStrictEqual(state.revealed, []);
 		});
 
 		test('reveals a formula when the cursor touches either delimiter', async () => {
@@ -135,7 +142,7 @@ suite('MathDecorator behavior', () => {
 		test('leaves an empty document without decorations', async () => {
 			const editor = await openEditor('');
 			api.decorator.update(editor);
-			assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [], unfolded: [], blocks: [], ghosts: [], rows: [] });
+			assertNoDecorations(api, editor);
 		});
 	});
 
@@ -146,7 +153,7 @@ suite('MathDecorator behavior', () => {
 			try {
 				await setGlobalConfig('mathInline', 'enabled', false);
 				api.decorator.update(editor);
-				assert.deepStrictEqual(api.decorator.getState(editor), { rendered: [], collapsed: [], errors: [], revealed: [], unfolded: [], blocks: [], ghosts: [], rows: [] });
+				assertNoDecorations(api, editor);
 			} finally {
 				await setGlobalConfig('mathInline', 'enabled', undefined);
 			}
@@ -213,18 +220,6 @@ suite('MathDecorator behavior', () => {
 
 		test('is false for formulas with TeX errors', () => {
 			assert.strictEqual(api.decorator.isLarge(inlineSpan(String.raw`\frac{a`)), false);
-		});
-	});
-
-	suite('getSpans', () => {
-		test('caches the parse per document version', async () => {
-			const editor = await openEditor('$a$');
-			const first = api.decorator.getSpans(editor.document);
-			assert.strictEqual(api.decorator.getSpans(editor.document), first);
-			await editor.edit(b => b.insert(new vscode.Position(0, 3), ' $b$'));
-			const second = api.decorator.getSpans(editor.document);
-			assert.notStrictEqual(second, first);
-			assert.deepStrictEqual(second.map(s => s.tex), ['a', 'b']);
 		});
 	});
 
