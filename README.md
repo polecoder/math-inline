@@ -5,8 +5,8 @@ Renders inline `$...$` math in Markdown files **directly in the editor**, not ju
 ## Features
 
 - Formulas between single dollars, like `$e^{i\pi} + 1 = 0$`, are replaced by their rendered version (MathJax, SVG output).
-- Move the cursor into a formula (or select it) to edit its TeX source; it renders again when you leave.
-- Invalid TeX is underlined, and hovering it shows the error.
+- Move the cursor into a formula (or select it) to edit its TeX source; it renders again when you leave. While you edit, the rendered formula is shown right after the closing `$`, and it keeps showing the last valid rendering while the TeX is half-typed.
+- Invalid TeX is underlined (also while you edit it), and hovering it shows the error.
 - Hover a formula's source to see a larger rendering.
 - Formulas are scaled down to fit the line. Those that would get too small (matrices, stacked fractions, big operators with limits) are replaced by a **∑ show formula** chip: hover it to see the formula in display mode. While you edit one, the preview opens next to the cursor.
 - Display math written on one line, like `$$\int_0^1 x\,dx$$`, is rendered in display style the same way, and becomes a chip when it would not fit.

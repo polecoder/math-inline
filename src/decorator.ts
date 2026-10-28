@@ -65,7 +65,7 @@ interface PendingDecorations {
 	chipSources: vscode.DecorationOptions[];
 	/** Fórmulas o líneas con error de TeX. */
 	errors: vscode.DecorationOptions[];
-	/** Vista previa de la fila en edición, al final de su línea. */
+	/** Vista previa de la fila en edición, al final de su línea, o de la fórmula inline en edición, después de su `$` de cierre. */
 	ghosts: vscode.DecorationOptions[];
 	/** Líneas delimitadoras atenuadas de un bloque en edición. */
 	faded: vscode.Range[];
@@ -97,7 +97,7 @@ export interface EditorMathState {
 	unfolded: vscode.Range[];
 	/** Rangos de los bloques `$$` dibujados en sus propias líneas (por filas o por franjas). */
 	blocks: vscode.Range[];
-	/** Rangos de las líneas que muestran la vista previa de la fila en edición. */
+	/** Rangos (vacíos) donde se muestra la vista previa de la fila o de la fórmula inline en edición. */
 	ghosts: vscode.Range[];
 	/** Rangos de las líneas que muestran la imagen de una fila de un bloque dibujado por filas. */
 	rows: vscode.Range[];
@@ -116,8 +116,10 @@ interface ParsedDocument {
  *
  * Oculta el código fuente de cada fórmula y muestra en su lugar la imagen; las fórmulas
  * con error se subrayan y las que tocan una selección se dejan como texto para poder editarlas.
- * Los bloques `$$` multilínea se dibujan en sus propias líneas: una imagen por fila si son una
- * tabla, o franjas del alto de una línea si no; al editarlos se revelan las líneas tocadas y se
+ * Las fórmulas inline (y `$$...$$` de una línea) en edición muestran una vista previa pegada a su `$`
+ * de cierre (salvo los chips, que usan el hover); si el TeX es inválido, se subrayan y se conserva el
+ * último render válido de esa misma fórmula (`lastGoodInline`).
+ * Los bloques `$$` multilínea se dibujan en sus propias líneas: una imagen por fila si son una tabla, o franjas del alto de una línea si no; al editarlos se revelan las líneas tocadas y se
  * muestra la vista previa de la fila. Los bloques nunca son chip ni tienen hover: uno que no se
  * puede dibujar (plegado a mano, demasiado chico o con error) se muestra como código y nunca se
  * pliega automáticamente. Como VS Code recuerda los plegados entre sesiones, los que quedaron de
@@ -165,7 +167,7 @@ export class MathDecorator implements vscode.Disposable {
 	private readonly errorType = vscode.window.createTextEditorDecorationType({
 		textDecoration: 'underline wavy var(--vscode-editorError-foreground)',
 	});
-	/** @brief Decoración de la vista previa de la fila en edición; la imagen va en `after` de cada decoración. */
+	/** @brief Decoración de la vista previa de la fila de bloque o de la fórmula inline en edición; la imagen va en `after` de cada decoración. */
 	private readonly ghostType = vscode.window.createTextEditorDecorationType({});
 	/** @brief Atenúa (`FADED_OPACITY`) las líneas delimitadoras de un bloque mientras se edita. */
 	private readonly fadedType =vscode.window.createTextEditorDecorationType({ opacity: FADED_OPACITY });
@@ -181,6 +183,8 @@ export class MathDecorator implements vscode.Disposable {
 	private readonly foldSignatures = new WeakMap<vscode.TextEditor, string>();
 	/** Último render válido de cada bloque dibujado por filas, por `uri#índice del bloque`, para seguir mostrándolo mientras el TeX está roto. */
 	private readonly lastGood = new Map<string, BlockView>();
+	/** Último render válido de la fórmula inline en edición de cada documento, por URI, con los offsets de inicio y fin de la fórmula. */
+	private readonly lastGoodInline = new Map<string, { start: number; end: number; image: RenderedMath }>();
 	private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
 	private readonly disposables: vscode.Disposable[] = [];
 	private config: MathInlineConfig = getConfig();
@@ -199,9 +203,12 @@ export class MathDecorator implements vscode.Disposable {
 	 * sobre el editor activo y hay que actualizarlo cuando recibe el foco. Con
 	 * `onDidChangeTextEditorVisibleRanges` (plegado, desplegado o scroll) actualiza el editor
 	 * solo si cambió `foldSignature`, porque un bloque plegado a mano no se dibuja. Al cerrar un
-	 * documento descarta sus fórmulas parseadas y sus entradas de `lastGood`. Ante un cambio de
-	 * configuración relee `getConfig()`, vacía `staleFoldsCleared` (para volver a desplegar los
-	 * plegados de antes, ver `unfoldStaleFolds`) y actualiza todos los editores.
+	 * documento descarta sus fórmulas parseadas, su entrada de `lastGoodInline` y sus entradas de
+	 * `lastGood`. Ante un cambio de documento llama a `trackInlineEdits` y programa la actualización.
+	 * Ante un cambio de tema vacía `lastGoodInline` (las vistas previas guardadas llevan el color
+	 * viejo) y actualiza todos los editores. Ante un cambio de configuración relee `getConfig()`,
+	 * vacía `staleFoldsCleared` (para volver a desplegar los plegados de antes, ver
+	 * `unfoldStaleFolds`) y `lastGoodInline`, y actualiza todos los editores.
 	 */
 	constructor() {
 		this.disposables.push(
@@ -222,22 +229,31 @@ export class MathDecorator implements vscode.Disposable {
 					this.update(e.textEditor);
 				}
 			}),
-			vscode.workspace.onDidChangeTextDocument(e => this.scheduleUpdate(e.document)),
+			vscode.workspace.onDidChangeTextDocument(e => {
+				this.trackInlineEdits(e);
+				this.scheduleUpdate(e.document);
+			}),
 			vscode.workspace.onDidCloseTextDocument(doc => {
 				const uri = doc.uri.toString();
 				this.parsed.delete(uri);
+				this.lastGoodInline.delete(uri);
 				// Reopening restores the saved folds, so they must be undone again.
 				this.staleFoldsCleared.delete(uri);
 				for (const key of [...this.lastGood.keys()].filter(k => k.startsWith(`${uri}#`))) {
 					this.lastGood.delete(key);
 				}
 			}),
-			vscode.window.onDidChangeActiveColorTheme(() => this.updateAll()),
+			vscode.window.onDidChangeActiveColorTheme(() => {
+				// The saved previews carry the old color.
+				this.lastGoodInline.clear();
+				this.updateAll();
+			}),
 			vscode.workspace.onDidChangeConfiguration(e => {
 				if (e.affectsConfiguration('mathInline') || e.affectsConfiguration('editor.fontSize')
 					|| e.affectsConfiguration('editor.lineHeight')) {
 					this.config = getConfig();
 					this.staleFoldsCleared.clear();
+					this.lastGoodInline.clear();
 					this.updateAll();
 				}
 			}),
@@ -389,8 +405,10 @@ export class MathDecorator implements vscode.Disposable {
 	/**
 	 * @brief Recalcula y aplica las decoraciones de un editor Markdown.
 	 *
-	 * Las fórmulas tocadas por alguna selección quedan reveladas (sin decorar), las
-	 * inválidas se subrayan con el mensaje de error, las que requerirían un achique menor
+	 * Las fórmulas tocadas por alguna selección quedan reveladas (en `revealed`, como texto); las
+	 * inline (y `$$...$$` de una línea) reveladas pasan por `previewInline`, que agrega su vista previa
+	 * en `ghosts` y, si el TeX es inválido, el subrayado de error. Las demás inválidas se subrayan
+	 * con el mensaje de error, las que requerirían un achique menor
 	 * a `MIN_INLINE_SCALE` quedan como chip (`collapsed`) y el resto se reemplaza por su
 	 * imagen. Los `$$...$$` de una sola línea se renderizan en modo display. Los bloques
 	 * multilínea se dibujan primero con `drawBlock` (que los acumula en `blocks`, `rows`, `ghosts`
@@ -436,6 +454,9 @@ export class MathDecorator implements vscode.Disposable {
 			}
 			if (editor.selections.some(sel => sel.start.isBeforeOrEqual(range.end) && sel.end.isAfterOrEqual(range.start))) {
 				revealed.push(range);
+				if (!block) {
+					this.previewInline(editor.document, span, range, out);
+				}
 				continue;
 			}
 			const result = this.renderInEditor(span);
@@ -470,6 +491,67 @@ export class MathDecorator implements vscode.Disposable {
 		if (this.config.enabled) {
 			this.unfoldStaleFolds(editor, blockStarts);
 		}
+	}
+
+	/**
+	 * @brief Muestra la vista previa de una fórmula inline en edición, pegada a su `$` de cierre.
+	 *
+	 * La imagen va en el `after` de una decoración vacía en el final de la fórmula (`ghosts`). Las
+	 * fórmulas que van como chip no llevan vista previa: la da el hover que abre `scheduleHover`.
+	 * Si el TeX es inválido, la fórmula se subraya con el error y se muestra el último render válido
+	 * de esa fórmula (`lastGoodInline`), si lo hay.
+	 *
+	 * @param document Documento de la fórmula.
+	 * @param span Fórmula inline (o `$$...$$` de una línea) tocada por una selección.
+	 * @param range Rango de la fórmula en el documento.
+	 * @param out Decoraciones en construcción.
+	 */
+	private previewInline(document: vscode.TextDocument, span: MathSpan, range: vscode.Range, out: PendingDecorations): void {
+		const uri = document.uri.toString();
+		const result = this.renderInEditor(span);
+		let image: RenderedMath | undefined;
+		const last = this.lastGoodInline.get(uri);
+		// Edits outside the formula drop the entry (see `trackInlineEdits`), so matching bounds mean the same formula.
+		const same = last?.start === span.start && last.end === span.end;
+		if (isError(result)) {
+			out.errors.push({ range, hoverMessage: `Math Inline: ${result.error}` });
+			image = same ? last.image : undefined;
+		} else if (result.fit >= MIN_INLINE_SCALE) {
+			this.lastGoodInline.set(uri, { start: span.start, end: span.end, image: result });
+			image = result;
+		} else if (same) {
+			// A chip shows no preview, so an error right after it must not bring back an older render.
+			this.lastGoodInline.delete(uri);
+		}
+		if (image) {
+			out.ghosts.push({ range: new vscode.Range(range.end, range.end), renderOptions: { after: { ...imageAttachment(image), margin: '0 0 0 1ch' } } });
+		}
+	}
+
+	/**
+	 * @brief Mantiene `lastGoodInline` al día ante una edición del documento.
+	 *
+	 * Si todos los cambios caen dentro de la fórmula guardada (entre sus delimitadores), corre su fin
+	 * según el texto agregado o quitado; si alguno cae fuera, descarta la entrada, porque otra
+	 * fórmula podría quedar en la misma posición.
+	 *
+	 * @param e Evento de cambio del documento.
+	 */
+	private trackInlineEdits(e: vscode.TextDocumentChangeEvent): void {
+		const uri = e.document.uri.toString();
+		const last = this.lastGoodInline.get(uri);
+		if (!last) {
+			return;
+		}
+		let delta = 0;
+		for (const change of e.contentChanges) {
+			if (change.rangeOffset <= last.start || change.rangeOffset + change.rangeLength >= last.end) {
+				this.lastGoodInline.delete(uri);
+				return;
+			}
+			delta += change.text.length - change.rangeLength;
+		}
+		last.end += delta;
 	}
 
 	/**

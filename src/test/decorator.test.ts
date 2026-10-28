@@ -112,10 +112,11 @@ suite('MathDecorator behavior', () => {
 			assert.deepStrictEqual(state.rendered, [range(0, 4, 7)]);
 		});
 
-		test('shows a formula with a TeX error as source when the cursor is inside it', async () => {
+		test('shows a formula with a TeX error as underlined source when the cursor is inside it', async () => {
 			const editor = await openEditor('$\\frac{a$');
 			placeCursor(api, editor, 0, 0);
-			assert.deepStrictEqual(api.decorator.getState(editor)!.errors, []);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.errors, [range(0, 0, 9)]);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, []);
 			assert.deepStrictEqual(api.decorator.getState(editor)!.revealed, [range(0, 0, 9)]);
 			assert.deepStrictEqual(api.decorator.getState(editor)!.rendered, []);
 		});
@@ -143,6 +144,159 @@ suite('MathDecorator behavior', () => {
 			const editor = await openEditor('');
 			api.decorator.update(editor);
 			assertNoDecorations(api, editor);
+		});
+	});
+
+	suite('inline preview', () => {
+		test('shows a preview right after the closing dollar of the formula being edited', async () => {
+			const editor = await openEditor('a $x^2$ b');
+			placeCursor(api, editor, 0, 4);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.revealed, [range(0, 2, 7)]);
+			assert.deepStrictEqual(state.ghosts, [range(0, 7, 7)]);
+			assert.deepStrictEqual(state.errors, []);
+		});
+
+		test('removes the preview when the cursor leaves the formula', async () => {
+			const editor = await openEditor('a $x^2$ b');
+			placeCursor(api, editor, 0, 4);
+			placeCursor(api, editor, 0, 9);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.ghosts, []);
+			assert.deepStrictEqual(state.rendered, [range(0, 2, 7)]);
+		});
+
+		test('shows the preview of a one-line $$ formula after its closing dollars', async () => {
+			const editor = await openEditor('$$x^2$$');
+			placeCursor(api, editor, 0, 3);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.revealed, [range(0, 0, 7)]);
+			assert.deepStrictEqual(state.ghosts, [range(0, 7, 7)]);
+		});
+
+		test('shows one preview per touched formula with multiple cursors', async () => {
+			const editor = await openEditor('$a$ $b$ $c$');
+			editor.selections = [new vscode.Selection(0, 1, 0, 1), new vscode.Selection(0, 9, 0, 9)];
+			api.decorator.update(editor);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 3, 3), range(0, 11, 11)]);
+		});
+
+		test('shows no preview for a big formula shown as a chip', async () => {
+			const editor = await openEditor(`$${BIG_TEX}$`);
+			placeCursor(api, editor, 0, 3);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.revealed, [range(0, 0, BIG_TEX.length + 2)]);
+			assert.deepStrictEqual(state.ghosts, []);
+			assert.deepStrictEqual(state.errors, []);
+		});
+
+		test('keeps showing the last valid render while an edit leaves the TeX invalid', async () => {
+			const editor = await openEditor('$x^2$');
+			placeCursor(api, editor, 0, 4);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 5, 5)]);
+			// `$x^2$` -> `$x^{2$`: the opening `$` stays at offset 0.
+			await editor.edit(b => b.replace(range(0, 3, 3), '{'));
+			assert.strictEqual(editor.document.getText(), '$x^{2$');
+			placeCursor(api, editor, 0, 5);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.errors, [range(0, 0, 6)]);
+			assert.deepStrictEqual(state.ghosts, [range(0, 6, 6)]);
+		});
+
+		test('shows the preview of the fixed formula once the TeX is valid again', async () => {
+			const editor = await openEditor('$x^2$');
+			placeCursor(api, editor, 0, 4);
+			await editor.edit(b => b.replace(range(0, 3, 3), '{'));
+			placeCursor(api, editor, 0, 5);
+			await editor.edit(b => b.insert(new vscode.Position(0, 5), '}'));
+			assert.strictEqual(editor.document.getText(), '$x^{2}$');
+			placeCursor(api, editor, 0, 6);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.errors, []);
+			assert.deepStrictEqual(state.ghosts, [range(0, 7, 7)]);
+		});
+
+		test('shows no preview for an error in a formula that never rendered', async () => {
+			const editor = await openEditor(String.raw`$\frac{a$`);
+			placeCursor(api, editor, 0, 3);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.errors, [range(0, 0, 9)]);
+			assert.deepStrictEqual(state.ghosts, []);
+		});
+
+		test('does not reuse the render of another formula for a formula with an error', async () => {
+			const editor = await openEditor(String.raw`$x$ $\frac{a$`);
+			placeCursor(api, editor, 0, 1);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 3, 3)]);
+			placeCursor(api, editor, 0, 8);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.errors, [range(0, 4, 13)]);
+			assert.deepStrictEqual(state.ghosts, []);
+		});
+
+		test('does not reuse the render of another document for a formula with an error', async () => {
+			const valid = await openEditor('$x$');
+			placeCursor(api, valid, 0, 1);
+			assert.deepStrictEqual(api.decorator.getState(valid)!.ghosts, [range(0, 3, 3)]);
+			const broken = await openEditor(String.raw`$\frac{a$`);
+			placeCursor(api, broken, 0, 3);
+			assert.deepStrictEqual(api.decorator.getState(broken)!.errors, [range(0, 0, 9)]);
+			assert.deepStrictEqual(api.decorator.getState(broken)!.ghosts, []);
+		});
+
+		test('does not reuse the render when the line of its formula is deleted and a broken formula lands on the same bounds', async () => {
+			const editor = await openEditor('$ab$\n' + String.raw`$\q$`);
+			placeCursor(api, editor, 0, 2);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 4, 4)]);
+			await editor.edit(b => b.delete(new vscode.Range(0, 0, 1, 0)));
+			assert.strictEqual(editor.document.getText(), String.raw`$\q$`);
+			placeCursor(api, editor, 0, 2);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.errors, [range(0, 0, 4)]);
+			assert.deepStrictEqual(state.ghosts, []);
+		});
+
+		test('does not reuse the render when its formula is deleted from the same line and a broken one lands on the same bounds', async () => {
+			const editor = await openEditor(String.raw`$ab$ $\q$`);
+			placeCursor(api, editor, 0, 2);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 4, 4)]);
+			await editor.edit(b => b.delete(range(0, 0, 5)));
+			assert.strictEqual(editor.document.getText(), String.raw`$\q$`);
+			placeCursor(api, editor, 0, 2);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.errors, [range(0, 0, 4)]);
+			assert.deepStrictEqual(state.ghosts, []);
+		});
+
+		test('does not bring back an older render when a formula that became a chip then has an error', async () => {
+			const editor = await openEditor('$x$');
+			placeCursor(api, editor, 0, 1);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 3, 3)]);
+			await editor.edit(b => b.insert(new vscode.Position(0, 2), BIG_TEX));
+			placeCursor(api, editor, 0, 3);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [], 'a chip has no preview');
+			assert.deepStrictEqual(api.decorator.getState(editor)!.revealed, [range(0, 0, BIG_TEX.length + 3)]);
+			await editor.edit(b => b.insert(new vscode.Position(0, BIG_TEX.length + 2), '{'));
+			placeCursor(api, editor, 0, 3);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.errors, [range(0, 0, BIG_TEX.length + 4)]);
+			assert.deepStrictEqual(state.ghosts, []);
+		});
+
+		test('drops the saved render when the configuration changes', async () => {
+			const editor = await openEditor('$x^2$');
+			placeCursor(api, editor, 0, 4);
+			await editor.edit(b => b.replace(range(0, 3, 3), '{'));
+			placeCursor(api, editor, 0, 5);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 6, 6)], 'the old render is still shown');
+			try {
+				await setGlobalConfig('mathInline', 'scale', 2);
+				const state = api.decorator.getState(editor)!;
+				assert.deepStrictEqual(state.errors, [range(0, 0, 6)]);
+				assert.deepStrictEqual(state.ghosts, []);
+			} finally {
+				await setGlobalConfig('mathInline', 'scale', undefined);
+			}
 		});
 	});
 

@@ -74,6 +74,12 @@ Si la edición deja el TeX inválido, se reutiliza el último render válido con
 ### 25. `margin-top` negativo sin verificar a mano
 No hay tests de lo visual (tamaños, escalas, márgenes de las decoraciones, contenido del SVG): se verifica a mano en cada actualización. Queda por verificar a mano que el `margin-top` negativo de las imágenes de las filas de los bloques `$$` no corra la línea base del texto.
 
+### 26. La vista previa al editar fórmulas inline desplaza el resto de la línea
+Mientras el cursor está en una fórmula inline (`$...$` o `$$...$$` de una línea), la vista previa después del `$` de cierre corre a la derecha el resto de la línea, y con word-wrap puede partirla distinto que sin edición. Su alineación con la línea base no se verificó a mano (igual que el ítem 25).
+
+### 27. Criterio distinto para bloques `$$` multilínea rotos
+Un bloque `$$` multilínea con TeX roto, sin render previo y con el cursor adentro no se subraya, a diferencia de las fórmulas inline, que sí se subrayan al editarlas.
+
 ## Sin verificar
 
 ### 10. Hover no probado a mano
