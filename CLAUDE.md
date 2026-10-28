@@ -14,19 +14,16 @@ Los tests y su cobertura los mantiene el subagente **Tests** (`.claude/agents/te
 
 Las vulnerabilidades de las dependencias las revisa el subagente **Vulnerabilidades** (`.claude/agents/vulnerabilidades.md`): corre `npm audit`, rastrea de dónde viene cada paquete vulnerable y lo corrige en `package.json` (actualizando la dependencia o, si un paquete intermedio fija una versión vulnerable, con `overrides`). No modifica el código de `src/`; si una corrección lo requiere, lo informa.
 
-Cada vez que se modifique `package.json` (agregar, quitar o actualizar dependencias o `overrides`), invocá al subagente **Vulnerabilidades** antes de dar el trabajo por terminado (y antes de hacer commit), indicándole qué cambió. Si informa cambios que requieren tocar código o vulnerabilidades sin corrección, resolvelos o consultalo con el usuario.
-
 ## Documentación
 
 La documentación la mantiene el subagente **Publisher** (`.claude/agents/publisher.md`): `README.md` (página del Marketplace, en inglés), `CHANGELOG.md` (Keep a Changelog, en inglés, con lo nuevo en `[Unreleased]`), `ISSUES.md` (problemas y pendientes, en español) y los textos visibles de `package.json` (descripciones de settings y comandos). Verifica contra el código lo que documenta. No modifica el código ni las dependencias; si encuentra diferencias entre el código y la documentación que parecen bugs, o propone subir la versión, lo informa.
 
+## Revisión
+
+Los cambios los revisa el subagente **Reviewer** (`.claude/agents/reviewer.md`): busca bugs, fugas de recursos de la API de VS Code y problemas de rendimiento del render en el diff. No modifica archivos.
+
 ## Al implementar o modificar funcionalidad
 
-Cada vez que implementes o modifiques funcionalidad, antes de dar el trabajo por terminado (y antes de hacer commit):
+Antes de dar el trabajo por terminado (y antes de hacer commit), usá la skill **`/cerrar-cambio`**: elige qué subagentes invocar según el tamaño del cambio, los corre en paralelo cuando se puede y hace la verificación final (`npm test`, `npm run check-types`, `npm run lint`). Si cambian dependencias u `overrides` de `package.json`, incluye al subagente **Vulnerabilidades**.
 
-1. Si cambió `package.json`, invocá al subagente **Vulnerabilidades** indicándole qué dependencias cambiaron.
-2. Invocá al subagente **Reviewer** indicándole los archivos que cambiaron. Si informa algún problema, resolvelo (o consultalo con el usuario) antes de seguir.
-3. Invocá al subagente **Tests** indicándole los archivos y símbolos que cambiaron. Si informa bugs, resolvelos (o consultalo con el usuario) antes de seguir.
-4. Invocá al subagente **Comentarios** indicándole los archivos y símbolos que cambiaron, incluidos los archivos de test que haya tocado el subagente Tests.
-5. Invocá al subagente **Publisher** indicándole qué cambió (funcionalidad, settings, comandos, bugs corregidos, problemas de `ISSUES.md` resueltos y limitaciones o pendientes que quedaron), incluidos los bugs que haya informado el subagente Tests. Si informa inconsistencias con el código o decisiones pendientes (como subir la versión), resolvelas o consultalo con el usuario.
-6. Revisá lo que cambió y corré `npm test`, `npm run check-types` y `npm run lint`.
+Para preparar una versión nueva está la skill **`/release`** (la invoca el usuario).

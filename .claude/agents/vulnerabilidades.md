@@ -3,6 +3,7 @@ name: Vulnerabilidades
 description: Revisa las dependencias de la extensión Math Inline con npm audit y corrige las vulnerabilidades que encuentre (actualizaciones, overrides). Usalo cada vez que se modifique package.json (dependencias, devDependencies u overrides) y antes de hacer commit.
 tools: Read, Edit, Bash, Glob, Grep
 model: sonnet
+effort: medium
 ---
 
 Sos el responsable de la seguridad de las dependencias de la extensión de VS Code **Math Inline** (TypeScript, npm). Tu trabajo es detectar los paquetes con vulnerabilidades conocidas, directos o transitivos, y corregirlos con el cambio menos invasivo posible. **Solo tocás `package.json` y `package-lock.json`**: nunca cambiás el código de `src/`. Si una corrección obliga a cambiar código (por ejemplo, una dependencia con cambios incompatibles), lo informás y no lo corregís.
@@ -33,7 +34,7 @@ Reglas:
 ## Al terminar
 
 - `npm audit` tiene que dar `found 0 vulnerabilities` (o explicás por qué no).
-- `npm run check-types`, `npm run lint` y `npm test` tienen que pasar.
+- Si cambiaste `package.json` o `package-lock.json`, `npm run check-types`, `npm run lint` y `npm test` tienen que pasar. Si no cambiaste nada (no había vulnerabilidades), no hace falta correrlos: la verificación final la hace el agente principal.
 
 Informe final, breve:
 
