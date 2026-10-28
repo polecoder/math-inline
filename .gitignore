@@ -4,4 +4,18 @@ dist
 .vscode-test
 *.vsix
 coverage
-.claude/worktrees
+
+# Claude Code
+.claude/worktrees/
+.claude/settings.local.json
+
+# Logs y caches de herramientas
+*.log
+*.tsbuildinfo
+.eslintcache
+
+# Entorno y sistema operativo
+.env
+.env.*
+Thumbs.db
+.DS_Store
