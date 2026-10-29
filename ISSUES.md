@@ -74,6 +74,12 @@ Si la edición deja el TeX inválido, se reutiliza el último render válido con
 ### 25. `margin-top` negativo sin verificar a mano
 No hay tests de lo visual (tamaños, escalas, márgenes de las decoraciones, contenido del SVG): se verifica a mano en cada actualización. Queda por verificar a mano que el `margin-top` negativo de las imágenes de las filas de los bloques `$$` no corra la línea base del texto.
 
+### 26. La vista previa al editar fórmulas inline desplaza el resto de la línea
+Mientras el cursor está en una fórmula inline (`$...$` o `$$...$$` de una línea), la vista previa después del `$` de cierre corre a la derecha el resto de la línea, y con word-wrap puede partirla distinto que sin edición. Su alineación con la línea base no se verificó a mano (igual que el ítem 25).
+
+### 27. Criterio distinto para bloques `$$` multilínea rotos
+Un bloque `$$` multilínea con TeX roto, sin render previo y con el cursor adentro no se subraya, a diferencia de las fórmulas inline, que sí se subrayan al editarlas.
+
 ## Sin verificar
 
 ### 10. Hover no probado a mano
@@ -100,3 +106,15 @@ Se cargan todos los paquetes TeX de MathJax (`AllPackages`). Se podría importar
 
 ### 16. ~~Restos del scaffold~~
 Resuelto en v0.2.0: se borró `vsc-extension-quickstart.md`.
+
+### 28. El recorte de la vista previa al romperse el cierre tiene casos sin cubrir
+Si al editar una fórmula inline el `$` de cierre deja de valer (espacio antes o `\`), la vista previa y el subrayado quedan en ese `$` (`previewInline`, `closingDelimiterError`). El recorte solo funciona si la fórmula tuvo un render válido mientras se editaba (`lastGoodInline`). No cubre:
+- Abrir un documento que ya tiene la fórmula rota.
+- Fórmulas que van como chip.
+- Varios cursores, ni dos editores del mismo documento.
+- Justo después de cambiar el tema o la configuración.
+
+En esos casos vuelve al comportamiento anterior: la vista previa aparece al final de todo el tramo que abarca la fórmula.
+
+### 29. Un dígito después del `$` de cierre no se recorta
+`$x$5` también rompe el cierre (regla Pandoc), pero el dígito cae fuera de la fórmula guardada y no se detecta como en el ítem 28: vuelve al comportamiento anterior.
