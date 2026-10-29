@@ -1,6 +1,6 @@
 # Math Inline
 
-Renders inline `$...$` math in Markdown files **directly in the editor**, not just in the preview.
+Renders `$...$` and `$$...$$` math in Markdown files **directly in the editor**, not just in the preview.
 
 ## Features
 
@@ -23,7 +23,7 @@ Dollar signs follow Pandoc's rules, so `$5 and $10` is not math: the opening `$`
 
 | Setting | Default | Description |
 |---|---|---|
-| `mathInline.enabled` | `true` | Render inline math in Markdown editors. |
+| `mathInline.enabled` | `true` | Render `$...$` and `$$...$$` math in Markdown editors. |
 | `mathInline.scale` | `1` | Size of formulas relative to the editor font size. |
 | `mathInline.color` | `""` | CSS color for formulas. Empty picks one based on the theme (light/dark/high contrast). |
 | `mathInline.katexWarnings` | `true` | Warn about formulas that VS Code's Markdown preview (KaTeX) cannot render. |

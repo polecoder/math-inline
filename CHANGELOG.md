@@ -4,6 +4,8 @@ All notable changes to the "math-inline" extension are documented in this file, 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-28
+
 ### Added
 
 - Display math. `$$...$$` on a single line is rendered in display style (or as a chip when too tall).
