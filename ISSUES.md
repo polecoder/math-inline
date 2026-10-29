@@ -24,7 +24,7 @@ Una extensión no puede leer los colores del tema, así que `resolveColor` (`src
 ## Alcance pendiente
 
 ### 5. ~~Display math (`$$...$$`) no se renderiza~~
-Resuelto (aún sin publicar, va en `[Unreleased]`): 
+Resuelto en v0.3.0:
 - `$$...$$` de una línea se renderiza en modo display (o como chip si no entra en la línea).
 - Los bloques multilínea se dibujan en el editor, por filas (tablas con una fila por línea, recortadas de la tabla completa) o por franjas del alto de una línea (el resto). Si no se pueden dibujar se muestran como TeX, sin hover; se quitó la opción de mostrarlos como chip (`displayMath`, `foldDisplayMath`) antes de publicarla.
 - Las posiciones de las filas y de los diagnósticos de KaTeX se calculan bien en documentos con CRLF.
@@ -51,7 +51,7 @@ No se ignoran: front matter YAML, bloques HTML (`<pre>`, `<code>`), URLs ni el t
 ### 18. Los bloques se dibujan dentro de las líneas que ya tienen
 VS Code no puede agregar espacio entre líneas: y las líneas con `$$`, `\begin` y `\end` quedan vacías. Un bloque que habría que achicar demasiado se muestra como TeX, sin vista previa.
 
-Parcialmente resuelto: en los bloques por filas, todas las filas usan una única escala y una fila más alta que la línea desborda sobre el espacio libre de las líneas vecinas (`margin-top` negativo). La escala es la mayor que evita superposiciones entre filas consecutivas y que la primera y la última salgan del bloque. Si esa escala sería menor que 0.8, se vuelve al achique por fila. Las limitaciones del desborde están en los ítems 21 a 25.
+Parcialmente resuelto en v0.3.0: en los bloques por filas, todas las filas usan una única escala y una fila más alta que la línea desborda sobre el espacio libre de las líneas vecinas (`margin-top` negativo). La escala es la mayor que evita superposiciones entre filas consecutivas y que la primera y la última salgan del bloque. Si esa escala sería menor que 0.8, se vuelve al achique por fila. Las limitaciones del desborde están en los ítems 21 a 25.
 
 ### 19. Una tabla solo se dibuja por filas en casos acotados
 Hace falta que cada fila empiece en su propia línea y que el bloque no tenga nada más que la tabla; si no, se dibuja en franjas y, al editarlo, todo el bloque muestra su TeX.

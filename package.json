@@ -1,8 +1,8 @@
 {
   "name": "math-inline",
   "displayName": "Math Inline",
-  "description": "Renders inline $...$ math in Markdown files directly inside the editor.",
-  "version": "0.2.0",
+  "description": "Renders $...$ and $$...$$ math in Markdown files directly inside the editor.",
+  "version": "0.3.0",
   "publisher": "polecoder",
   "icon": "images/icon.png",
   "galleryBanner": {
@@ -58,7 +58,7 @@
         "mathInline.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Render inline $...$ math in Markdown editors."
+          "description": "Render $...$ and $$...$$ math in Markdown editors."
         },
         "mathInline.scale": {
           "type": "number",
