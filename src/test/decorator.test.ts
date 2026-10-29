@@ -59,6 +59,40 @@ function assertNoDecorations(api: MathInlineApi, editor: vscode.TextEditor): voi
 	}
 }
 
+/**
+ * @brief Actualiza el decorador y devuelve los mensajes de hover de las decoraciones que puso en el editor.
+ *
+ * `getState` solo expone rangos, así que se actualiza a través de un proxy del editor que intercepta
+ * `setDecorations` (el de un editor real es de solo lectura).
+ * Solo las decoraciones de error llevan `hoverMessage`.
+ *
+ * @param api API de la extensión.
+ * @param editor Editor a actualizar.
+ * @return Mensajes de hover, en el orden en que se aplicaron.
+ */
+function hoverMessages(api: MathInlineApi, editor: vscode.TextEditor): string[] {
+	const messages: string[] = [];
+	const spy = new Proxy({} as vscode.TextEditor, {
+		get(_, property) {
+			if (property === 'setDecorations') {
+				return (type: vscode.TextEditorDecorationType, decorations: readonly vscode.Range[] | readonly vscode.DecorationOptions[]) => {
+					for (const decoration of decorations as readonly (vscode.Range | vscode.DecorationOptions)[]) {
+						const message = 'hoverMessage' in decoration ? decoration.hoverMessage : undefined;
+						if (typeof message === 'string') {
+							messages.push(message);
+						}
+					}
+					editor.setDecorations(type, decorations as vscode.DecorationOptions[]);
+				};
+			}
+			const value: unknown = Reflect.get(editor, property, editor);
+			return typeof value === 'function' ? value.bind(editor) : value;
+		},
+	});
+	api.decorator.update(spy);
+	return messages;
+}
+
 suite('MathDecorator behavior', () => {
 	let api: MathInlineApi;
 
@@ -281,6 +315,126 @@ suite('MathDecorator behavior', () => {
 			const state = api.decorator.getState(editor)!;
 			assert.deepStrictEqual(state.errors, [range(0, 0, BIG_TEX.length + 4)]);
 			assert.deepStrictEqual(state.ghosts, []);
+		});
+
+		test('limits the preview to the edited formula when a space before its closing dollar makes the parser run on', async () => {
+			// Columns: `$` of the first formula at 18; its closing `$` at 35, which becomes 36 after the space.
+			const editor = await openEditor(String.raw`Euler's identity: $e^{i\pi} + 1 = 0$, and a fraction $\frac{a+b}{c}$ inline.`);
+			placeCursor(api, editor, 0, 20);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 36, 36)]);
+			await editor.edit(b => b.insert(new vscode.Position(0, 35), ' '));
+			assert.strictEqual(editor.document.lineAt(0).text, String.raw`Euler's identity: $e^{i\pi} + 1 = 0 $, and a fraction $\frac{a+b}{c}$ inline.`);
+			placeCursor(api, editor, 0, 20);
+			const state = api.decorator.getState(editor)!;
+			// The parser now reads up to the second formula's closing `$`, but only the first one is flagged.
+			assert.deepStrictEqual(state.revealed, [range(0, 18, 69)]);
+			assert.deepStrictEqual(state.errors, [range(0, 18, 37)]);
+			assert.deepStrictEqual(state.ghosts, [range(0, 37, 37)]);
+		});
+
+		test('keeps the preview after the original closing dollar when the TeX is also invalid', async () => {
+			const editor = await openEditor(String.raw`Euler's identity: $e^{i\pi} + 1 = 0$, and a fraction $\frac{a+b}{c}$ inline.`);
+			placeCursor(api, editor, 0, 20);
+			// One edit adds an unclosed `{` after the opening `$` and the space before the closing `$` (35 -> 37).
+			await editor.edit(b => {
+				b.insert(new vscode.Position(0, 19), '{');
+				b.insert(new vscode.Position(0, 35), ' ');
+			});
+			assert.strictEqual(editor.document.lineAt(0).text, String.raw`Euler's identity: $` + String.raw`{e^{i\pi} + 1 = 0 $, and a fraction $\frac{a+b}{c}$ inline.`);
+			placeCursor(api, editor, 0, 21);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.errors, [range(0, 18, 38)]);
+			assert.deepStrictEqual(state.ghosts, [range(0, 38, 38)]);
+		});
+
+		test('moves the preview along with the closing dollar while the formula is edited after it stopped closing', async () => {
+			const editor = await openEditor(String.raw`$x^2$ and $y$`);
+			placeCursor(api, editor, 0, 2);
+			await editor.edit(b => b.insert(new vscode.Position(0, 4), ' '));
+			assert.strictEqual(editor.document.getText(), String.raw`$x^2 $ and $y$`);
+			placeCursor(api, editor, 0, 2);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.errors, [range(0, 0, 6)]);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 6, 6)]);
+			// Typing inside the formula moves its closing `$`, and the preview follows it.
+			await editor.edit(b => b.insert(new vscode.Position(0, 1), 'a'));
+			placeCursor(api, editor, 0, 3);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.errors, [range(0, 0, 7)]);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 7, 7)]);
+		});
+
+		test('previews the whole run-on formula after its end when the document opens with the closing dollar already broken', async () => {
+			const editor = await openEditor(String.raw`Euler's identity: $e^{i\pi} + 1 = 0 $, and a fraction $\frac{a+b}{c}$ inline.`);
+			placeCursor(api, editor, 0, 20);
+			const state = api.decorator.getState(editor)!;
+			// There is no earlier render to tell where the formula used to close, so the parser's span (columns 18 to 69) is used as is.
+			assert.deepStrictEqual(state.revealed, [range(0, 18, 69)]);
+			assert.deepStrictEqual(state.errors, []);
+			assert.deepStrictEqual(state.ghosts, [range(0, 69, 69)]);
+		});
+
+		test('limits the preview of a one-line $$ formula to its original closing dollars when an escape makes the parser run on', async () => {
+			const editor = await openEditor('$$x^2$$ and $$y$$');
+			placeCursor(api, editor, 0, 4);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 7, 7)]);
+			// `$$x^2\$$ and $$y$$`: the escaped `$` no longer closes, so the formula runs to the second `$$`.
+			await editor.edit(b => b.insert(new vscode.Position(0, 5), '\\'));
+			assert.strictEqual(editor.document.getText(), String.raw`$$x^2\$$ and $$y$$`);
+			placeCursor(api, editor, 0, 4);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.revealed, [range(0, 0, 15)]);
+			assert.deepStrictEqual(state.errors, [range(0, 0, 8)]);
+			assert.deepStrictEqual(state.ghosts, [range(0, 8, 8)]);
+		});
+
+		test('explains that the closing dollar follows a space', async () => {
+			const editor = await openEditor('$x^2$ and $y$');
+			placeCursor(api, editor, 0, 2);
+			await editor.edit(b => b.insert(new vscode.Position(0, 4), ' '));
+			assert.deepStrictEqual(hoverMessages(api, editor), [
+				'Math Inline: this $ does not close the formula (it follows a space), so the formula runs on to a later $',
+			]);
+		});
+
+		test('explains that the closing dollar is escaped', async () => {
+			const editor = await openEditor('$x^2$ and $y$');
+			placeCursor(api, editor, 0, 2);
+			// `$x^2\$ and $y$`: the escaped `$` does not close, so the formula runs on to the last `$`.
+			await editor.edit(b => b.insert(new vscode.Position(0, 4), '\\'));
+			assert.strictEqual(editor.document.getText(), String.raw`$x^2\$ and $y$`);
+			placeCursor(api, editor, 0, 2);
+			const state = api.decorator.getState(editor)!;
+			assert.deepStrictEqual(state.errors, [range(0, 0, 6)]);
+			assert.deepStrictEqual(state.ghosts, [range(0, 6, 6)]);
+			assert.deepStrictEqual(hoverMessages(api, editor), [
+				'Math Inline: this $ does not close the formula (it is escaped), so the formula runs on to a later $',
+			]);
+		});
+
+		test('joins the delimiter and TeX messages when both are wrong', async () => {
+			const editor = await openEditor('$x^2$ and $y$');
+			placeCursor(api, editor, 0, 2);
+			await editor.edit(b => {
+				b.insert(new vscode.Position(0, 3), '{');
+				b.insert(new vscode.Position(0, 4), ' ');
+			});
+			assert.strictEqual(editor.document.getText(), '$x^{2 $ and $y$');
+			const messages = hoverMessages(api, editor);
+			assert.strictEqual(messages.length, 1);
+			assert.match(messages[0], /^Math Inline: this \$ does not close the formula \(it follows a space\), so the formula runs on to a later \$; .+/);
+		});
+
+		test('does not flag a closing delimiter when a $$ formula loses its closing dollars by deletion', async () => {
+			const editor = await openEditor('$$x$$ and $$y$$');
+			placeCursor(api, editor, 0, 2);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.ghosts, [range(0, 5, 5)]);
+			// `$$x$$ and $$y$$` -> `$$$ and $$y$$`: the formula now runs to the second `$$`.
+			await editor.edit(b => b.delete(range(0, 2, 4)));
+			assert.strictEqual(editor.document.getText(), '$$$ and $$y$$');
+			placeCursor(api, editor, 0, 1);
+			assert.deepStrictEqual(api.decorator.getState(editor)!.revealed, [range(0, 0, 10)]);
+			for (const message of hoverMessages(api, editor)) {
+				assert.doesNotMatch(message, /does not close the formula/);
+			}
 		});
 
 		test('drops the saved render when the configuration changes', async () => {

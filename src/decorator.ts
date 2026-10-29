@@ -35,6 +35,21 @@ const HOVER_DELAY_MS = 300;
 const FOLD_DELAY_MS = 500;
 /** @brief Achique mínimo aceptable para un bloque `$$` cortado en franjas; si necesita más, no se dibuja en el editor. */
 const MIN_BAND_SCALE = 0.5;
+/**
+ * @brief Arma el mensaje para una fórmula en edición cuyo delimitador de cierre dejó de valer.
+ *
+ * Según las reglas de Pandoc (ver `findMath`), un delimitador escapado con `\` no cierra la
+ * fórmula, y el `$` de cierre inline tampoco puede ir precedido de un espacio; entonces la fórmula
+ * sigue hasta un delimitador posterior que sí cierre.
+ *
+ * @param delimiter Delimitador de cierre (`$` o `$$`).
+ * @param before Carácter del TeX justo antes del delimitador.
+ * @return Mensaje que explica por qué el delimitador no cierra.
+ */
+function closingDelimiterError(delimiter: string, before: string): string {
+	const cause = before === '\\' ? 'it is escaped' : 'it follows a space';
+	return `this ${delimiter} does not close the formula (${cause}), so the formula runs on to a later ${delimiter}`;
+}
 /** @brief Opacidad de las líneas delimitadoras (`$$`, `\begin`, `\end`) de un bloque mientras se edita. */
 const FADED_OPACITY = '0.45';
 
@@ -407,7 +422,7 @@ export class MathDecorator implements vscode.Disposable {
 	 *
 	 * Las fórmulas tocadas por alguna selección quedan reveladas (en `revealed`, como texto); las
 	 * inline (y `$$...$$` de una línea) reveladas pasan por `previewInline`, que agrega su vista previa
-	 * en `ghosts` y, si el TeX es inválido, el subrayado de error. Las demás inválidas se subrayan
+	 * en `ghosts` y, si el TeX es inválido o el delimitador de cierre dejó de valer, el subrayado de error. Las demás inválidas se subrayan
 	 * con el mensaje de error, las que requerirían un achique menor
 	 * a `MIN_INLINE_SCALE` quedan como chip (`collapsed`) y el resto se reemplaza por su
 	 * imagen. Los `$$...$$` de una sola línea se renderizan en modo display. Los bloques
@@ -500,6 +515,12 @@ export class MathDecorator implements vscode.Disposable {
 	 * fórmulas que van como chip no llevan vista previa: la da el hover que abre `scheduleHover`.
 	 * Si el TeX es inválido, la fórmula se subraya con el error y se muestra el último render válido
 	 * de esa fórmula (`lastGoodInline`), si lo hay.
+	 * Si la edición invalidó el delimitador de cierre de la fórmula guardada (por ejemplo, con un
+	 * espacio antes del `$`), el parser sigue hasta un `$` posterior y `span` abarca texto y fórmulas
+	 * que le siguen. En ese caso la vista previa se limita a la fórmula en edición, hasta su `$` de
+	 * cierre, que se subraya con el mensaje de `closingDelimiterError` (más el error de TeX, si lo hay).
+	 * Como `span` es de una sola línea, `span.tex` es exactamente el texto entre sus delimitadores y
+	 * la fórmula en edición se recorta sobre él.
 	 *
 	 * @param document Documento de la fórmula.
 	 * @param span Fórmula inline (o `$$...$$` de una línea) tocada por una selección.
@@ -508,23 +529,42 @@ export class MathDecorator implements vscode.Disposable {
 	 */
 	private previewInline(document: vscode.TextDocument, span: MathSpan, range: vscode.Range, out: PendingDecorations): void {
 		const uri = document.uri.toString();
-		const result = this.renderInEditor(span);
-		let image: RenderedMath | undefined;
 		const last = this.lastGoodInline.get(uri);
-		// Edits outside the formula drop the entry (see `trackInlineEdits`), so matching bounds mean the same formula.
-		const same = last?.start === span.start && last.end === span.end;
+		let target = span;
+		let targetRange = range;
+		const messages: string[] = [];
+		if (last?.start === span.start && last.end < span.end) {
+			const delimiter = span.display ? '$$' : '$';
+			// Index in `span.tex` where the saved closing delimiter would be.
+			const texEnd = last.end - span.start - 2 * delimiter.length;
+			if (texEnd >= 0 && span.tex.startsWith(delimiter, texEnd)) {
+				// The parser ran past the closing delimiter of the formula being edited, so preview only that formula.
+				target = { ...span, end: last.end, tex: span.tex.slice(0, texEnd) };
+				targetRange = new vscode.Range(range.start, document.positionAt(last.end));
+				messages.push(closingDelimiterError(delimiter, span.tex.charAt(texEnd - 1)));
+			}
+		}
+		const result = this.renderInEditor(target);
 		if (isError(result)) {
-			out.errors.push({ range, hoverMessage: `Math Inline: ${result.error}` });
+			messages.push(result.error);
+		}
+		if (messages.length > 0) {
+			out.errors.push({ range: targetRange, hoverMessage: `Math Inline: ${messages.join('; ')}` });
+		}
+		let image: RenderedMath | undefined;
+		// Edits outside the formula drop the entry (see `trackInlineEdits`), so matching bounds mean the same formula.
+		const same = last?.start === target.start && last.end === target.end;
+		if (isError(result)) {
 			image = same ? last.image : undefined;
 		} else if (result.fit >= MIN_INLINE_SCALE) {
-			this.lastGoodInline.set(uri, { start: span.start, end: span.end, image: result });
+			this.lastGoodInline.set(uri, { start: target.start, end: target.end, image: result });
 			image = result;
 		} else if (same) {
 			// A chip shows no preview, so an error right after it must not bring back an older render.
 			this.lastGoodInline.delete(uri);
 		}
 		if (image) {
-			out.ghosts.push({ range: new vscode.Range(range.end, range.end), renderOptions: { after: { ...imageAttachment(image), margin: '0 0 0 1ch' } } });
+			out.ghosts.push({ range: new vscode.Range(targetRange.end, targetRange.end), renderOptions: { after: { ...imageAttachment(image), margin: '0 0 0 1ch' } } });
 		}
 	}
 

@@ -106,3 +106,15 @@ Se cargan todos los paquetes TeX de MathJax (`AllPackages`). Se podría importar
 
 ### 16. ~~Restos del scaffold~~
 Resuelto en v0.2.0: se borró `vsc-extension-quickstart.md`.
+
+### 28. El recorte de la vista previa al romperse el cierre tiene casos sin cubrir
+Si al editar una fórmula inline el `$` de cierre deja de valer (espacio antes o `\`), la vista previa y el subrayado quedan en ese `$` (`previewInline`, `closingDelimiterError`). El recorte solo funciona si la fórmula tuvo un render válido mientras se editaba (`lastGoodInline`). No cubre:
+- Abrir un documento que ya tiene la fórmula rota.
+- Fórmulas que van como chip.
+- Varios cursores, ni dos editores del mismo documento.
+- Justo después de cambiar el tema o la configuración.
+
+En esos casos vuelve al comportamiento anterior: la vista previa aparece al final de todo el tramo que abarca la fórmula.
+
+### 29. Un dígito después del `$` de cierre no se recorta
+`$x$5` también rompe el cierre (regla Pandoc), pero el dígito cae fuera de la fórmula guardada y no se detecta como en el ítem 28: vuelve al comportamiento anterior.
