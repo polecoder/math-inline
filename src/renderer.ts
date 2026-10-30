@@ -157,7 +157,7 @@ interface Converted {
 let adaptor: ReturnType<typeof liteAdaptor> | undefined;
 /** @brief Documento de MathJax compartido, creado en el primer render. */
 let doc: MathDocument | undefined;
-/** @brief Caché de resultados de render (`math`, `rows` y `bands`), indexada por `cacheKey`; limitada a `CACHE_LIMIT` entradas. */
+/** @brief Caché de resultados de render (`math`, `rows` y `bands`), indexada por `cacheKey`; LRU limitada a `CACHE_LIMIT` entradas. */
 const cache = new Map<string, unknown>();
 /** Tablas registradas por el `placeRows` parcheado durante la conversión en curso. */
 let tableRecords: TableRecord[] = [];
@@ -274,7 +274,7 @@ function convert(tex: string, display: boolean, textStyle: boolean): Converted |
 /**
  * @brief Busca un resultado en la caché o lo calcula y lo guarda.
  *
- * Descarta la entrada más antigua al llegar a `CACHE_LIMIT`.
+ * Al llegar a `CACHE_LIMIT` descarta la entrada usada hace más tiempo (cada acierto la pasa al final).
  *
  * @param key Clave del resultado.
  * @param compute Función que calcula el resultado si no está en caché.
@@ -282,11 +282,15 @@ function convert(tex: string, display: boolean, textStyle: boolean): Converted |
  */
 function cached<T>(key: string, compute: () => T): T {
 	if (cache.has(key)) {
-		return cache.get(key) as T;
+		const hit = cache.get(key) as T;
+		// Map preserves insertion order: moving the entry to the end keeps it from being dropped soon.
+		cache.delete(key);
+		cache.set(key, hit);
+		return hit;
 	}
 	const result = compute();
 	if (cache.size >= CACHE_LIMIT) {
-		// Map preserves insertion order: drop the oldest entry.
+		// Map preserves insertion order: drop the least recently used entry.
 		cache.delete(cache.keys().next().value!);
 	}
 	cache.set(key, result);
@@ -297,7 +301,7 @@ function cached<T>(key: string, compute: () => T): T {
  * @brief Renderiza TeX inline a una imagen SVG, con caché.
  *
  * La caché se indexa por color, `exPx`, `textStyle`, `maxHeight`, `display` y TeX, y
- * descarta la entrada más antigua al llegar a `CACHE_LIMIT`. Los errores también se cachean.
+ * descarta la entrada usada hace más tiempo al llegar a `CACHE_LIMIT`. Los errores también se cachean.
  *
  * @param tex Código TeX de la fórmula, sin delimitadores.
  * @param options Color, escala, estilo de texto, alto máximo y modo display del render.

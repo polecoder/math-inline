@@ -36,6 +36,12 @@ const FOLD_DELAY_MS = 500;
 /** @brief Achique mínimo aceptable para un bloque `$$` cortado en franjas; si necesita más, no se dibuja en el editor. */
 const MIN_BAND_SCALE = 0.5;
 /**
+ * @brief Margen mínimo, en líneas, que se decora arriba y abajo de la zona visible del editor.
+ *
+ * El margen real es el mayor entre este valor y el alto de la zona visible (ver `lineWindow`).
+ */
+export const MIN_WINDOW_MARGIN = 50;
+/**
  * @brief Arma el mensaje para una fórmula en edición cuyo delimitador de cierre dejó de valer.
  *
  * Según las reglas de Pandoc (ver `findMath`), un delimitador escapado con `\` no cierra la
@@ -98,9 +104,12 @@ interface PendingDecorations {
 
 /**
  * @brief Decoraciones aplicadas por última vez a un editor.
+ *
+ * Los rangos corresponden solo a las fórmulas del tramo de líneas decorado (ver `lineWindow`),
+ * no a las de todo el documento.
  */
 export interface EditorMathState {
-	/** Rangos de las fórmulas renderizadas correctamente. */
+	/** Rangos de las fórmulas renderizadas correctamente (solo las del tramo decorado). */
 	rendered: vscode.Range[];
 	/** Rangos de las fórmulas inline demasiado grandes, mostradas como chip. */
 	collapsed: vscode.Range[];
@@ -116,6 +125,18 @@ export interface EditorMathState {
 	ghosts: vscode.Range[];
 	/** Rangos de las líneas que muestran la imagen de una fila de un bloque dibujado por filas. */
 	rows: vscode.Range[];
+}
+
+/**
+ * @brief Tramo de líneas de un editor cuyas fórmulas se decoran: la zona visible más un margen arriba y abajo.
+ */
+interface LineWindow {
+	/** Primera línea del tramo (al menos 0). */
+	start: number;
+	/** Última línea del tramo (a lo sumo la última del documento). */
+	end: number;
+	/** Margen, en líneas, que se agregó a cada lado de la zona visible. */
+	margin: number;
 }
 
 /** @brief Fórmulas parseadas de un documento, asociadas a la versión que se analizó. */
@@ -196,6 +217,8 @@ export class MathDecorator implements vscode.Disposable {
 	private readonly parsed = new Map<string, ParsedDocument>();
 	private readonly states = new WeakMap<vscode.TextEditor, EditorMathState>();
 	private readonly foldSignatures = new WeakMap<vscode.TextEditor, string>();
+	/** Tramo de líneas decorado en la última actualización de cada editor (ver `lineWindow`). */
+	private readonly windows = new WeakMap<vscode.TextEditor, LineWindow>();
 	/** Último render válido de cada bloque dibujado por filas, por `uri#índice del bloque`, para seguir mostrándolo mientras el TeX está roto. */
 	private readonly lastGood = new Map<string, BlockView>();
 	/** Último render válido de la fórmula inline en edición de cada documento, por URI, con los offsets de inicio y fin de la fórmula. */
@@ -203,6 +226,8 @@ export class MathDecorator implements vscode.Disposable {
 	private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
 	private readonly disposables: vscode.Disposable[] = [];
 	private config: MathInlineConfig = getConfig();
+	/** Tamaño de fuente y alto de línea del editor en px; se releen solo al cambiar la configuración, porque leerla en cada fórmula es caro. */
+	private metrics = readMetrics();
 	private hoverTimer: ReturnType<typeof setTimeout> | undefined;
 	private lastHoverKey: string | undefined;
 	/** Documentos cuyos bloques plegados de antes ya se desplegaron (ver `unfoldStaleFolds`). */
@@ -217,12 +242,13 @@ export class MathDecorator implements vscode.Disposable {
 	 * También se suscribe a `onDidChangeActiveTextEditor`, porque `unfoldStaleFolds` solo actúa
 	 * sobre el editor activo y hay que actualizarlo cuando recibe el foco. Con
 	 * `onDidChangeTextEditorVisibleRanges` (plegado, desplegado o scroll) actualiza el editor
-	 * solo si cambió `foldSignature`, porque un bloque plegado a mano no se dibuja. Al cerrar un
+	 * solo si cambió `foldSignature` (un bloque plegado a mano no se dibuja) o si `nearWindowEdge`
+	 * indica que el scroll se acercó al borde del tramo decorado. Al cerrar un
 	 * documento descarta sus fórmulas parseadas, su entrada de `lastGoodInline` y sus entradas de
 	 * `lastGood`. Ante un cambio de documento llama a `trackInlineEdits` y programa la actualización.
 	 * Ante un cambio de tema vacía `lastGoodInline` (las vistas previas guardadas llevan el color
-	 * viejo) y actualiza todos los editores. Ante un cambio de configuración relee `getConfig()`,
-	 * vacía `staleFoldsCleared` (para volver a desplegar los plegados de antes, ver
+	 * viejo) y actualiza todos los editores. Ante un cambio de configuración relee `getConfig()` y
+	 * `readMetrics()`, vacía `staleFoldsCleared` (para volver a desplegar los plegados de antes, ver
 	 * `unfoldStaleFolds`) y `lastGoodInline`, y actualiza todos los editores.
 	 */
 	constructor() {
@@ -239,8 +265,9 @@ export class MathDecorator implements vscode.Disposable {
 			vscode.window.onDidChangeActiveTextEditor(editor => editor && this.update(editor)),
 			vscode.window.onDidChangeTextEditorSelection(e => this.update(e.textEditor)),
 			// Folding or unfolding a block changes the visible ranges, and a folded block is not drawn.
+			// Scrolling near the edge of the decorated lines needs the formulas further on.
 			vscode.window.onDidChangeTextEditorVisibleRanges(e => {
-				if (this.foldSignatures.get(e.textEditor) !== this.foldSignature(e.textEditor)) {
+				if (this.foldSignatures.get(e.textEditor) !== this.foldSignature(e.textEditor) || this.nearWindowEdge(e.textEditor)) {
 					this.update(e.textEditor);
 				}
 			}),
@@ -267,6 +294,7 @@ export class MathDecorator implements vscode.Disposable {
 				if (e.affectsConfiguration('mathInline') || e.affectsConfiguration('editor.fontSize')
 					|| e.affectsConfiguration('editor.lineHeight')) {
 					this.config = getConfig();
+					this.metrics = readMetrics();
 					this.staleFoldsCleared.clear();
 					this.lastGoodInline.clear();
 					this.updateAll();
@@ -304,7 +332,7 @@ export class MathDecorator implements vscode.Disposable {
 	renderOptions(scale = 1): RenderOptions {
 		return {
 			color: resolveColor(this.config),
-			exPx: getFontSize() * EX_PER_EM * this.config.scale * scale,
+			exPx: this.metrics.fontSize * EX_PER_EM * this.config.scale * scale,
 		};
 	}
 
@@ -317,7 +345,7 @@ export class MathDecorator implements vscode.Disposable {
 	 */
 	private inlineOptions(): RenderOptions {
 		// Lines cannot grow, so tall formulas are flattened and shrunk to fit one line.
-		return { ...this.renderOptions(), textStyle: true, maxHeight: getLineHeight() };
+		return { ...this.renderOptions(), textStyle: true, maxHeight: this.metrics.lineHeight };
 	}
 
 	/**
@@ -382,7 +410,7 @@ export class MathDecorator implements vscode.Disposable {
 		const offsets = layoutRows(span.tex);
 		if (offsets) {
 			const rowLines = offsets.map(offset => texPosition(document, span, offset).line);
-			const layout = { rowLines: rowLines.map(line => line - startLine), lines, axis: getFontSize() * AXIS_EM };
+			const layout = { rowLines: rowLines.map(line => line - startLine), lines, axis: this.metrics.fontSize * AXIS_EM };
 			const rows = renderRows(span.tex, this.inlineOptions(), layout);
 			if (rows && isError(rows)) {
 				return rows;
@@ -391,7 +419,7 @@ export class MathDecorator implements vscode.Disposable {
 				return { kind: 'rows', rows, rowLines };
 			}
 		}
-		const bands = renderBands(span.tex, { ...this.renderOptions(), maxHeight: getLineHeight() }, lines);
+		const bands = renderBands(span.tex, { ...this.renderOptions(), maxHeight: this.metrics.lineHeight }, lines);
 		if (isError(bands)) {
 			return bands;
 		}
@@ -400,6 +428,8 @@ export class MathDecorator implements vscode.Disposable {
 
 	/**
 	 * @brief Devuelve las últimas decoraciones aplicadas a un editor, para tests y diagnóstico.
+	 *
+	 * Los rangos son solo los de las fórmulas del tramo decorado, no los de todo el documento.
 	 *
 	 * @param editor Editor consultado.
 	 * @return Estado de las decoraciones, o `undefined` si el editor nunca se actualizó.
@@ -420,9 +450,13 @@ export class MathDecorator implements vscode.Disposable {
 	/**
 	 * @brief Recalcula y aplica las decoraciones de un editor Markdown.
 	 *
+	 * Solo decora las fórmulas dentro de `lineWindow(editor)` (la zona visible más un margen) y
+	 * guarda ese tramo en `windows`; las demás se saltean. Todos los bloques se cuentan igual
+	 * (`blockIndex`, que da las claves de `lastGood`, y `blockStarts`), para que no dependan del scroll.
 	 * Las fórmulas tocadas por alguna selección quedan reveladas (en `revealed`, como texto); las
 	 * inline (y `$$...$$` de una línea) reveladas pasan por `previewInline`, que agrega su vista previa
-	 * en `ghosts` y, si el TeX es inválido o el delimitador de cierre dejó de valer, el subrayado de error. Las demás inválidas se subrayan
+	 * en `ghosts` y, si el TeX es inválido o el delimitador de cierre dejó de valer, el subrayado
+	 * de error. Las demás inválidas se subrayan
 	 * con el mensaje de error, las que requerirían un achique menor
 	 * a `MIN_INLINE_SCALE` quedan como chip (`collapsed`) y el resto se reemplaza por su
 	 * imagen. Los `$$...$$` de una sola línea se renderizan en modo display. Los bloques
@@ -458,14 +492,21 @@ export class MathDecorator implements vscode.Disposable {
 
 		const blockStarts: number[] = [];
 		let blockIndex = 0;
+		const window = lineWindow(editor);
 		for (const span of this.config.enabled ? this.getSpans(editor.document) : []) {
 			const range = new vscode.Range(editor.document.positionAt(span.start), editor.document.positionAt(span.end));
 			const block = isDisplayBlock(span);
+			// Counted for every block, so that the `lastGood` keys don't depend on the scroll position.
+			const key = block ? `${editor.document.uri.toString()}#${blockIndex++}` : '';
 			if (block) {
 				blockStarts.push(range.start.line);
-				if (this.drawBlock(editor, span, range, `${editor.document.uri.toString()}#${blockIndex++}`, out)) {
-					continue;
-				}
+			}
+			// Decorating every formula of a long document on each cursor move is too slow.
+			if (range.end.line < window.start || range.start.line > window.end) {
+				continue;
+			}
+			if (block && this.drawBlock(editor, span, range, key, out)) {
+				continue;
 			}
 			if (editor.selections.some(sel => sel.start.isBeforeOrEqual(range.end) && sel.end.isAfterOrEqual(range.start))) {
 				revealed.push(range);
@@ -502,6 +543,7 @@ export class MathDecorator implements vscode.Disposable {
 			revealed, unfolded, blocks: out.blocks, ghosts: out.ghosts.map(d => d.range), rows: out.rows,
 		});
 		this.foldSignatures.set(editor, this.foldSignature(editor));
+		this.windows.set(editor, window);
 		this.scheduleHover(editor);
 		if (this.config.enabled) {
 			this.unfoldStaleFolds(editor, blockStarts);
@@ -757,6 +799,32 @@ export class MathDecorator implements vscode.Disposable {
 	}
 
 	/**
+	 * @brief Indica si la zona visible de un editor se acercó al borde del tramo decorado.
+	 *
+	 * Es así si la última actualización no tenía zona visible (decoró todo el documento) o si
+	 * quedan menos de medio margen de líneas decoradas entre la zona visible y un borde del
+	 * tramo que no es el principio ni el final del documento.
+	 *
+	 * @param editor Editor consultado.
+	 * @return `true` si hay que actualizar para decorar las fórmulas que se acercan al hacer scroll.
+	 */
+	private nearWindowEdge(editor: vscode.TextEditor): boolean {
+		const window = this.windows.get(editor);
+		const ranges = editor.visibleRanges;
+		if (!window || ranges.length === 0) {
+			return false;
+		}
+		if (window.margin === 0) {
+			// The last update had no visible area and decorated the whole document.
+			return true;
+		}
+		const first = ranges[0].start.line;
+		const last = ranges[ranges.length - 1].end.line;
+		return (window.start > 0 && first < window.start + window.margin / 2)
+			|| (window.end < editor.document.lineCount - 1 && last > window.end - window.margin / 2);
+	}
+
+	/**
 	 * @brief Abre el hover de la fórmula inline grande bajo el cursor, si la hay.
 	 *
 	 * Solo actúa sobre el editor activo. Tras `HOVER_DELAY_MS` ejecuta `editor.action.showHover`;
@@ -853,6 +921,40 @@ export function texPosition(document: vscode.TextDocument, span: MathSpan, offse
 	const start = document.positionAt(span.start);
 	const { line, column } = texLocation(span, offset);
 	return line === 0 ? start.translate(0, (span.display ? 2 : 1) + column) : new vscode.Position(start.line + line, column);
+}
+
+/**
+ * @brief Calcula el tramo de líneas de un editor cuyas fórmulas se decoran.
+ *
+ * Es la zona visible (de la primera a la última línea de `visibleRanges`) más un margen arriba y
+ * abajo del mayor entre su alto (sin contar las líneas plegadas) y
+ * `MIN_WINDOW_MARGIN`, recortado al documento. Si el editor no informa zona visible, abarca
+ * todo el documento (con `margin` en 0).
+ *
+ * @param editor Editor consultado.
+ * @return Tramo de líneas a decorar.
+ */
+function lineWindow(editor: vscode.TextEditor): LineWindow {
+	const ranges = editor.visibleRanges;
+	const lastLine = editor.document.lineCount - 1;
+	if (ranges.length === 0) {
+		return { start: 0, end: lastLine, margin: 0 };
+	}
+	const first = ranges[0].start.line;
+	const last = ranges[ranges.length - 1].end.line;
+	// Folded lines lie between the visible ranges, so they must not count towards the height.
+	const height = ranges.reduce((lines, r) => lines + r.end.line - r.start.line + 1, 0);
+	const margin = Math.max(MIN_WINDOW_MARGIN, height);
+	return { start: Math.max(0, first - margin), end: Math.min(lastLine, last + margin), margin };
+}
+
+/**
+ * @brief Lee el tamaño de fuente y el alto de línea del editor.
+ *
+ * @return Tamaño de fuente (`getFontSize`) y alto de línea (`getLineHeight`), en píxeles.
+ */
+function readMetrics(): { fontSize: number; lineHeight: number } {
+	return { fontSize: getFontSize(), lineHeight: getLineHeight() };
 }
 
 /**

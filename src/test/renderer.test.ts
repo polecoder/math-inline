@@ -53,6 +53,22 @@ suite('renderer', () => {
 		assert.match(result.error, /undefined control sequence/i);
 	});
 
+	// The cache only shows through the identity of the result: an evicted formula is rendered again as a new object.
+	test('keeps a formula that is used again while many new ones are rendered, and drops one that is not', () => {
+		const used = render('lru_{used}', options);
+		const unused = render('lru_{unused}', options);
+		// 300 + 300 formulas are more than the cache holds (500), but `used` is touched in between.
+		for (let i = 0; i < 300; i++) {
+			render(`lru_{a${i}}`, options);
+		}
+		assert.strictEqual(render('lru_{used}', options), used);
+		for (let i = 0; i < 300; i++) {
+			render(`lru_{b${i}}`, options);
+		}
+		assert.strictEqual(render('lru_{used}', options), used, 'the formula used recently was dropped');
+		assert.notStrictEqual(render('lru_{unused}', options), unused, 'the formula that was not used again was kept');
+	});
+
 	test('renderBands reports TeX errors', () => {
 		const result = renderBands(String.raw`\frac{a`, { ...options, maxHeight: 19 }, 3);
 		assert.ok(isError(result));

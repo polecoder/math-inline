@@ -88,11 +88,16 @@ Un bloque `$$` multilínea con TeX roto, sin render previo y con el cursor adent
 ### 11. Revelado al mover el cursor: verificado solo por tests
 El test de integración comprueba la lógica, pero no se miró en pantalla (parpadeo, posición del cursor al entrar a un rango oculto, navegación con flechas sobre fórmulas ocultas, selección por doble clic).
 
-### 12. Rendimiento sin medir
-Falta probar un archivo con ~1000 fórmulas. Cada cambio de selección recorre todas las fórmulas del documento (render cacheado, pero igual se crean todas las decoraciones); conviene limitarlo a `editor.visibleRanges`. El debounce de `onDidChangeTextDocument` queda casi anulado porque escribir también dispara `onDidChangeTextEditorSelection`, que re-parsea en el acto.
+### 12. ~~Rendimiento sin medir~~
+Resuelto en lo esencial (rama `perf/visible-ranges`, para v0.4.0): en un documento de ~1200 fórmulas, cada movimiento del cursor pasó de ~650 ms a ~5 ms (y ~5 ms al escribir).
+- Solo se decoran las fórmulas del tramo visible más un margen arriba y abajo (el mayor entre 50 líneas y el alto visible, sin contar líneas plegadas); al hacer scroll cerca del borde del tramo se decoran las siguientes.
+- La caché de render es LRU (antes FIFO: con más de 500 fórmulas se vaciaba en cada recorrido). El tamaño de fuente y el alto de línea se leen una vez por cambio de configuración.
+- El re-parseo en cada cambio de selección cuesta ~5 ms en ese documento, así que no se tocó.
+- Pendiente: `KatexDiagnostics` (`src/katex.ts`) vuelve a revisar todas las fórmulas de todos los documentos abiertos en cada edición o cambio de configuración (con debounce); puede ser el próximo cuello de botella.
+- Pendiente: verificar a mano el scroll rápido (arrastrando la barra de desplazamiento): las fórmulas fuera del tramo se ven como TeX hasta que se actualiza.
 
-### 13. CI sin correr
-`.github/workflows/ci.yml` nunca se ejecutó; `xvfb-run` en Ubuntu queda por confirmar.
+### 13. ~~CI sin correr~~
+Resuelto: la CI corre y pasa en los últimos PRs (`xvfb-run` funciona en Ubuntu).
 
 ## Empaquetado y publicación
 
@@ -118,3 +123,22 @@ En esos casos vuelve al comportamiento anterior: la vista previa aparece al fina
 
 ### 29. Un dígito después del `$` de cierre no se recorta
 `$x$5` también rompe el cierre (regla Pandoc), pero el dígito cae fuera de la fórmula guardada y no se detecta como en el ítem 28: vuelve al comportamiento anterior.
+
+### 30. Sticky scroll muestra TeX en encabezados con fórmulas
+Un encabezado con fórmula (`## Teorema sobre $\mathbb{R}$`) más arriba que el tramo decorado (ver el ítem 12) se vería como TeX en la línea fija de sticky scroll. Sin verificar a mano.
+
+### 31. `lastGood` de los bloques solo se refresca en el tramo decorado
+El último render válido de los bloques `$$` (`lastGood`) solo se actualiza para los bloques del tramo decorado. Si se agrega un bloque arriba y otro lejano se rompe sin haberse dibujado (reemplazo global o cambio externo), al entrar al tramo podría reusarse el render de otro bloque con igual cantidad de filas. Caso rebuscado, sin reproducir.
+
+## Ideas para versiones futuras
+
+### 32. Macros del usuario
+Setting `mathInline.macros` y lectura de `markdown.math.macros`.
+
+### 33. Más lenguajes
+Quarto, R Markdown, MDX.
+
+### 34. Errores de TeX en el panel Problems
+Hoy el panel solo muestra las advertencias de compatibilidad con KaTeX; los errores de TeX no.
+
+### 35. Copiar como SVG o LaTeX desde el hover
