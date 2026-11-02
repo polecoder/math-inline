@@ -2,7 +2,7 @@
   "name": "math-inline",
   "displayName": "Math Inline",
   "description": "Renders $...$ and $$...$$ math in Markdown files directly inside the editor.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "polecoder",
   "icon": "images/icon.png",
   "galleryBanner": {

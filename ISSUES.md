@@ -35,13 +35,13 @@ Resuelto en v0.3.0:
 ## Parser (`src/parser.ts`)
 
 ### 7. ~~Listas con contenido indentado se toman como código~~
-Resuelto en la rama `parser/contextos` (para v0.4.0): dentro de un ítem de lista la sangría se mide desde la columna del contenido del ítem; solo es código una sangría de 4 o más por encima de esa columna. Los párrafos de continuación renderizan sus fórmulas. De paso, una línea con 4 espacios justo después de un encabezado, un separador, un cerco o un bloque HTML ahora es código con sangría (antes se tomaba como texto).
+Resuelto en v0.4.0: dentro de un ítem de lista la sangría se mide desde la columna del contenido del ítem; solo es código una sangría de 4 o más por encima de esa columna. Los párrafos de continuación renderizan sus fórmulas. De paso, una línea con 4 espacios justo después de un encabezado, un separador, un cerco o un bloque HTML ahora es código con sangría (antes se tomaba como texto).
 
 ### 8. `$a$$b$` no produce ninguna fórmula
 El `$$` del medio se interpreta como apertura de display math. Pandoc se comporta parecido, pero conviene confirmarlo y decidir.
 
 ### 9. ~~Otros contextos que no se excluyen~~
-Resuelto en lo esencial (rama `parser/contextos`, para v0.4.0): ya no se toman como fórmula los `$` del front matter YAML (línea 1 `---`; cierra `---` o `...`; si no cierra, no hay front matter), de los comentarios HTML y del contenido de `<pre>`, `<code>`, `<script>`, `<style>` y `<textarea>` (una o varias líneas, con la lógica de los bloques HTML de CommonMark), ni del destino y el título de links e imágenes y los autolinks `<https://...>`. El texto del link sí puede tener fórmulas. Lo que queda: ver los ítems 36 a 43.
+Resuelto en lo esencial en v0.4.0: ya no se toman como fórmula los `$` del front matter YAML (línea 1 `---`; cierra `---` o `...`; si no cierra, no hay front matter), de los comentarios HTML y del contenido de `<pre>`, `<code>`, `<script>`, `<style>` y `<textarea>` (una o varias líneas, con la lógica de los bloques HTML de CommonMark), ni del destino y el título de links e imágenes y los autolinks `<https://...>`. El texto del link sí puede tener fórmulas. Lo que queda: ver los ítems 36 a 43.
 
 ## Display math
 
@@ -89,7 +89,7 @@ Un bloque `$$` multilínea con TeX roto, sin render previo y con el cursor adent
 El test de integración comprueba la lógica, pero no se miró en pantalla (parpadeo, posición del cursor al entrar a un rango oculto, navegación con flechas sobre fórmulas ocultas, selección por doble clic).
 
 ### 12. ~~Rendimiento sin medir~~
-Resuelto en lo esencial (rama `perf/visible-ranges`, para v0.4.0): en un documento de ~1200 fórmulas, cada movimiento del cursor pasó de ~650 ms a ~5 ms (y ~5 ms al escribir).
+Resuelto en lo esencial en v0.4.0: en un documento de ~1200 fórmulas, cada movimiento del cursor pasó de ~650 ms a ~5 ms (y ~5 ms al escribir).
 - Solo se decoran las fórmulas del tramo visible más un margen arriba y abajo (el mayor entre 50 líneas y el alto visible, sin contar líneas plegadas); al hacer scroll cerca del borde del tramo se decoran las siguientes.
 - La caché de render es LRU (antes FIFO: con más de 500 fórmulas se vaciaba en cada recorrido). El tamaño de fuente y el alto de línea se leen una vez por cambio de configuración.
 - El re-parseo en cada cambio de selección cuesta ~5 ms en ese documento, así que no se tocó.

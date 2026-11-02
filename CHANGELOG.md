@@ -4,6 +4,8 @@ All notable changes to the "math-inline" extension are documented in this file, 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-02
+
 ### Changed
 
 - Much faster in long documents. Only the formulas near the visible area (plus a margin above and below) are rendered, and the next ones are rendered as you scroll. Moving the cursor or typing in a document with over a thousand formulas now takes milliseconds instead of hundreds of milliseconds. Formulas far from the visible area show their plain TeX until you scroll near them.
