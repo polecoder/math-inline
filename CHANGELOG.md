@@ -8,6 +8,12 @@ All notable changes to the "math-inline" extension are documented in this file, 
 
 - Much faster in long documents. Only the formulas near the visible area (plus a margin above and below) are rendered, and the next ones are rendered as you scroll. Moving the cursor or typing in a document with over a thousand formulas now takes milliseconds instead of hundreds of milliseconds. Formulas far from the visible area show their plain TeX until you scroll near them.
 
+### Fixed
+
+- Dollar signs in more places are no longer taken as math: YAML front matter, HTML comments, the content of `<pre>`, `<code>`, `<script>`, `<style>` and `<textarea>`, the destination and title of links and images, and `<https://...>` autolinks. The text of a link can still contain formulas.
+- Formulas in continuation paragraphs of list items are now rendered. Before, a paragraph indented 4 or more spaces inside a list item was taken as code. Now only an indentation of 4 or more beyond the item's content is code.
+- A line indented 4 spaces right after a heading, a horizontal rule, a code fence or an HTML block is now treated as indented code, not as text.
+
 ## [0.3.0] - 2026-10-28
 
 ### Added

@@ -14,6 +14,8 @@ Not math: prices like $5 and $10, escaped \$x\$, and code `$x$`.
 $not math inside a fence$
 ```
 
+Also ignored: <!-- $x$ in a comment -->, `<pre>`-like HTML such as <code>$x$</code>, and link targets like [the $y$ text](https://example.com/a$b$c "a $z$ title") (only the link text is math).
+
 Single-line display math renders in place: $$\int_0^1 x\,dx = \frac{1}{2}$$, and a taller one becomes a chip: $$\sum_{k=1}^{n} k^2$$.
 
 Multi-line display blocks are drawn on their own lines (a single integral by bands, a table by rows); put the cursor on a line to edit it:

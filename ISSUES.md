@@ -34,14 +34,14 @@ Resuelto en v0.3.0:
 
 ## Parser (`src/parser.ts`)
 
-### 7. Listas con contenido indentado se toman como código
-Una línea indentada con 4+ espacios después de una línea en blanco se trata como bloque de código indentado, pero dentro de una lista (continuación de un ítem) es texto normal. Las fórmulas en párrafos de continuación de listas no se renderizan.
+### 7. ~~Listas con contenido indentado se toman como código~~
+Resuelto en la rama `parser/contextos` (para v0.4.0): dentro de un ítem de lista la sangría se mide desde la columna del contenido del ítem; solo es código una sangría de 4 o más por encima de esa columna. Los párrafos de continuación renderizan sus fórmulas. De paso, una línea con 4 espacios justo después de un encabezado, un separador, un cerco o un bloque HTML ahora es código con sangría (antes se tomaba como texto).
 
 ### 8. `$a$$b$` no produce ninguna fórmula
 El `$$` del medio se interpreta como apertura de display math. Pandoc se comporta parecido, pero conviene confirmarlo y decidir.
 
-### 9. Otros contextos que no se excluyen
-No se ignoran: front matter YAML, bloques HTML (`<pre>`, `<code>`), URLs ni el texto de los links. Un `$` dentro de ellos podría tomarse como fórmula.
+### 9. ~~Otros contextos que no se excluyen~~
+Resuelto en lo esencial (rama `parser/contextos`, para v0.4.0): ya no se toman como fórmula los `$` del front matter YAML (línea 1 `---`; cierra `---` o `...`; si no cierra, no hay front matter), de los comentarios HTML y del contenido de `<pre>`, `<code>`, `<script>`, `<style>` y `<textarea>` (una o varias líneas, con la lógica de los bloques HTML de CommonMark), ni del destino y el título de links e imágenes y los autolinks `<https://...>`. El texto del link sí puede tener fórmulas. Lo que queda: ver los ítems 36 a 43.
 
 ## Display math
 
@@ -129,6 +129,30 @@ Un encabezado con fórmula (`## Teorema sobre $\mathbb{R}$`) más arriba que el 
 
 ### 31. `lastGood` de los bloques solo se refresca en el tramo decorado
 El último render válido de los bloques `$$` (`lastGood`) solo se actualiza para los bloques del tramo decorado. Si se agrega un bloque arriba y otro lejano se rompe sin haberse dibujado (reemplazo global o cambio externo), al entrar al tramo podría reusarse el render de otro bloque con igual cantidad de filas. Caso rebuscado, sin reproducir.
+
+### 36. Contextos del parser que todavía no se ignoran
+No se ignoran las URLs sueltas sin `<>` (autolinks de GFM), las definiciones de referencia `[x]: url`, los autolinks de email `<a@b.c>` ni los bloques HTML de tipo 6 (`<div>`, `<table>`...): su contenido se sigue analizando.
+
+### 37. `<code>` y `<pre>` en línea: decisión sin verificar
+El contenido de `<code>` y de un `<pre>` en línea se ignora, aunque la vista previa de Markdown de VS Code (markdown-it) podría renderizar ahí la fórmula. Está sin verificar contra la vista previa.
+
+### 38. Un `<!--` o `<pre>` sin cerrar oculta el resto del documento
+Un `<!--` o `<pre>` (también `<script>`, `<style>`, `<textarea>`) sin cerrar al comienzo de una línea oculta todas las fórmulas hasta el final del documento, como en CommonMark. Mientras se escribe `<!--`, desaparece el render de todo lo que está debajo.
+
+### 39. Un bloque HTML dentro de un ítem de lista no termina con el ítem
+Un bloque HTML abierto dentro de un ítem de lista sigue abierto aunque el ítem termine.
+
+### 40. Las citas `>` no se tienen en cuenta
+Las listas y la sangría de código dentro de una cita se miden con el `>` incluido.
+
+### 41. Límites de los destinos y títulos de links
+Tienen que estar en una sola línea. El anidamiento de paréntesis se corta en 32, como cmark, y un título entre paréntesis no admite un `(` sin escapar (como en CommonMark). Las dos reglas evitan que una línea con muchos links sin cerrar cueste tiempo cuadrático. Las definiciones de referencia (`[x]: url`) no se tratan (ítem 36).
+
+### 42. HTML en línea sin cerrar
+Termina en la línea en blanco o en una línea que abre un bloque (cerco, encabezado, separador o ítem de lista). Si nunca se cierra, CommonMark lo trataría como texto, pero acá las fórmulas que encierra hasta ese punto se ignoran. Un subrayado setext (`-` o `=` solo después de un párrafo) no se reconoce como fin de párrafo, ni para esto ni para la sangría de código de la línea siguiente.
+
+### 43. Rendimiento del parser
+`findMath` pasó de ~0,35 a ~0,5 ms en un documento de 1300 líneas por el análisis de contextos. No se optimizó.
 
 ## Ideas para versiones futuras
 

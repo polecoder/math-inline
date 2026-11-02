@@ -17,7 +17,7 @@ Renders `$...$` and `$$...$$` math in Markdown files **directly in the editor**,
   - Blocks that would get too small to read, that you fold by hand, or that have a TeX error show their plain TeX, without a preview. The extension never folds blocks by itself, and blocks left folded from an earlier session are unfolded when the document opens.
 - Formulas that render here but that VS Code's Markdown preview (KaTeX) cannot render, like `\bbox`, get a warning in the Problems panel pointing at the unsupported command.
 
-Dollar signs follow Pandoc's rules, so `$5 and $10` is not math: the opening `$` must not be followed by a space, and the closing `$` must not be preceded by a space nor followed by a digit. Escaped dollars (`\$`), code spans and code blocks are ignored.
+Dollar signs follow Pandoc's rules, so `$5 and $10` is not math: the opening `$` must not be followed by a space, and the closing `$` must not be preceded by a space nor followed by a digit. Escaped dollars (`\$`), code spans and code blocks (fenced or indented, also inside list items) are ignored. So are YAML front matter, HTML comments, the content of `<pre>`, `<code>`, `<script>`, `<style>` and `<textarea>`, and the destination and title of links and images (`[text](url "title")`) and autolinks (`<https://...>`). The text of a link can still contain formulas.
 
 ## Settings
 
