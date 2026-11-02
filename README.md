@@ -35,6 +35,7 @@ Command: **Math Inline: Toggle Inline Math Rendering**, bound to <kbd>Ctrl</kbd>
 - VS Code cannot add room between lines, so a `$$` block is drawn within the lines it already has: rows taller than a line (stacked fractions, matrices inside a row) share one scale and may overlap the empty space of neighbouring lines, and the lines with `$$`, `\begin` and `\end` stay empty.
 - A table is drawn by rows only if every row starts on its own line and the block holds nothing but the table; otherwise it is drawn in bands, and while you edit it the whole block shows its TeX.
 - VS Code cannot change line heights, so tall formulas are scaled down or collapsed into a chip instead of being shown at their natural size. Use `mathInline.scale` to adjust the overall size.
+- Only the formulas near the visible area are rendered. In long documents, formulas far from it show their plain TeX until you scroll near them (a very fast scroll can show TeX for a moment).
 - With word wrap on, VS Code wraps lines based on the length of the (hidden) TeX source, so a line full of formulas may wrap earlier than it looks like it should.
 - Extensions cannot read theme colors, so the default formula color depends only on the theme kind. Set `mathInline.color` to match your theme exactly.
 
