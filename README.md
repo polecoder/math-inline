@@ -1,8 +1,22 @@
 # Math Inline
 
+[![Version](https://img.shields.io/visual-studio-marketplace/v/polecoder.math-inline)](https://marketplace.visualstudio.com/items?itemName=polecoder.math-inline)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/polecoder.math-inline)](https://marketplace.visualstudio.com/items?itemName=polecoder.math-inline)
+[![Rating](https://img.shields.io/visual-studio-marketplace/r/polecoder.math-inline)](https://marketplace.visualstudio.com/items?itemName=polecoder.math-inline)
+
 ![Math Inline demo](./images/demo.gif)
 
 Renders `$...$` and `$$...$$` math in Markdown files **directly in the editor**, not just in the preview.
+
+Extensions based on the preview show formulas in a separate panel. Math Inline shows them in the editor itself, as Obsidian or Typora do.
+
+## Quick start
+
+1. Install **Math Inline** from the Marketplace.
+2. Open a `.md` file.
+3. Type `$e^{i\pi}+1=0$`. While the cursor is still on it, a preview appears right after the closing `$`; move the cursor away and the TeX is replaced by the rendered formula.
+4. Move the cursor back into the formula to edit its TeX.
+5. Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> (<kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> on macOS) to switch between rendered formulas and TeX source.
 
 ## Features
 
@@ -40,6 +54,10 @@ Command: **Math Inline: Toggle Inline Math Rendering**, bound to <kbd>Ctrl</kbd>
 - Only the formulas near the visible area are rendered. In long documents, formulas far from it show their plain TeX until you scroll near them (a very fast scroll can show TeX for a moment).
 - With word wrap on, VS Code wraps lines based on the length of the (hidden) TeX source, so a line full of formulas may wrap earlier than it looks like it should.
 - Extensions cannot read theme colors, so the default formula color depends only on the theme kind. Set `mathInline.color` to match your theme exactly.
+
+## Feedback
+
+If Math Inline is useful to you, please leave a rating on the [Marketplace](https://marketplace.visualstudio.com/items?itemName=polecoder.math-inline&ssr=false#review-details) or a star on [GitHub](https://github.com/polecoder/math-inline). If something fails, [open an issue](https://github.com/polecoder/math-inline/issues).
 
 ## Development
 

@@ -35,4 +35,5 @@ Trabajá en una rama `release/v<versión>` creada desde `main`.
 - Commit (`Release v<versión>`), push de la rama y PR a `main` con las entradas del CHANGELOG de esta versión en la descripción.
 - No crees el tag ni publiques en el Marketplace por tu cuenta. Al terminar, indicale al usuario los comandos para después de mergear el PR:
   - `git checkout main && git pull && git tag v<versión> && git push origin v<versión>`
-  - `npx vsce publish` (requiere el token del publisher `polecoder`).
+  - `npx vsce publish --packagePath math-inline-<versión>.vsix` (requiere el token del publisher `polecoder`).
+  - `npx ovsx publish math-inline-<versión>.vsix -p <token>`: publica el mismo `.vsix` en Open VSX, que es de donde instalan Cursor, Windsurf, VSCodium y code-server. El token se crea en open-vsx.org (o se pasa en la variable de entorno `OVSX_PAT`). Solo la primera vez hace falta antes `npx ovsx create-namespace polecoder -p <token>`.

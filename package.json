@@ -1,7 +1,7 @@
 {
   "name": "math-inline",
   "displayName": "Math Inline",
-  "description": "Renders $...$ and $$...$$ math in Markdown files directly inside the editor.",
+  "description": "See LaTeX math ($...$ and $$...$$) rendered inline while you type in Markdown, like Obsidian or Typora. No preview pane needed.",
   "version": "0.4.1",
   "publisher": "polecoder",
   "icon": "images/icon.png",
@@ -23,13 +23,23 @@
     "math",
     "latex",
     "mathjax",
-    "tex"
+    "tex",
+    "inline",
+    "equation",
+    "formula",
+    "katex",
+    "notes",
+    "live preview",
+    "wysiwyg",
+    "obsidian",
+    "typora"
   ],
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
     "Visualization",
+    "Education",
     "Other"
   ],
   "activationEvents": [
