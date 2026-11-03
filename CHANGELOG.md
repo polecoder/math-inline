@@ -4,6 +4,8 @@ All notable changes to the "math-inline" extension are documented in this file, 
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-03
+
 ### Changed
 
 - New Marketplace description, keywords and the **Education** category, to make the extension easier to find. The README now has badges, a Quick start and a Feedback section.

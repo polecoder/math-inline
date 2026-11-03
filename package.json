@@ -2,7 +2,7 @@
   "name": "math-inline",
   "displayName": "Math Inline",
   "description": "See LaTeX math ($...$ and $$...$$) rendered inline while you type in Markdown, like Obsidian or Typora. No preview pane needed.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "publisher": "polecoder",
   "icon": "images/icon.png",
   "galleryBanner": {
