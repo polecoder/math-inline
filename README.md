@@ -1,5 +1,7 @@
 # Math Inline
 
+![Math Inline demo](./images/demo.gif)
+
 Renders `$...$` and `$$...$$` math in Markdown files **directly in the editor**, not just in the preview.
 
 ## Features
@@ -21,12 +23,12 @@ Dollar signs follow Pandoc's rules, so `$5 and $10` is not math: the opening `$`
 
 ## Settings
 
-| Setting | Default | Description |
-|---|---|---|
-| `mathInline.enabled` | `true` | Render `$...$` and `$$...$$` math in Markdown editors. |
-| `mathInline.scale` | `1` | Size of formulas relative to the editor font size. |
-| `mathInline.color` | `""` | CSS color for formulas. Empty picks one based on the theme (light/dark/high contrast). |
-| `mathInline.katexWarnings` | `true` | Warn about formulas that VS Code's Markdown preview (KaTeX) cannot render. |
+| Setting                    | Default | Description                                                                            |
+| -------------------------- | ------- | -------------------------------------------------------------------------------------- |
+| `mathInline.enabled`       | `true`  | Render `$...$` and `$$...$$` math in Markdown editors.                                 |
+| `mathInline.scale`         | `1`     | Size of formulas relative to the editor font size.                                     |
+| `mathInline.color`         | `""`    | CSS color for formulas. Empty picks one based on the theme (light/dark/high contrast). |
+| `mathInline.katexWarnings` | `true`  | Warn about formulas that VS Code's Markdown preview (KaTeX) cannot render.             |
 
 Command: **Math Inline: Toggle Inline Math Rendering**, bound to <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> (<kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> on macOS) in Markdown editors. Press it once to see the TeX source of every formula, and again to see them rendered. To use another shortcut, open **Preferences: Open Keyboard Shortcuts** and search for `mathInline.toggle`.
 
