@@ -2,7 +2,7 @@
   "name": "math-inline",
   "displayName": "Math Inline",
   "description": "Renders $...$ and $$...$$ math in Markdown files directly inside the editor.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "polecoder",
   "icon": "images/icon.png",
   "galleryBanner": {
@@ -108,7 +108,9 @@
     "diff": "^8.0.4",
     "serialize-javascript": "^7.1.3",
     "@xmldom/xmldom": "^0.9.12",
-    "@azure/msal-node": "^7.1.1"
+    "@azure/msal-node": "^7.1.1",
+    "minimatch": "^11.0.1",
+    "glob": "^14.0.2"
   },
   "dependencies": {
     "katex": "^0.19.1",

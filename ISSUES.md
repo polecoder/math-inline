@@ -106,7 +106,7 @@ Se cargan todos los paquetes TeX de MathJax (`AllPackages`). Se podría importar
 
 ### 15. Metadata del Marketplace
 - ~~Icono PNG 128×128~~: agregado en v0.2.0 (`images/icon.png`).
-- Falta un GIF o captura de demo en el README.
+- ~~GIF de demo en el README~~: agregado en v0.4.1 (`images/demo.gif`).
 - Confirmar el publisher `polecoder` (tiene que existir en el Marketplace) y la licencia MIT asumida.
 
 ### 16. ~~Restos del scaffold~~
