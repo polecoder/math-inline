@@ -4,6 +4,12 @@ All notable changes to the "math-inline" extension are documented in this file, 
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-02
+
+### Added
+
+- A demo GIF at the top of the README (and the Marketplace page).
+
 ## [0.4.0] - 2026-11-02
 
 ### Changed
